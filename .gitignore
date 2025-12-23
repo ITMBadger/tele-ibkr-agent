@@ -1,17 +1,11 @@
 # Security: Ignore environment variables
 .env
 
-# Ignore all __pycache__ folders
+# Ignore all following folders
 __pycache__/
-
-# Ignore all _archive folders
 _archive/
-
-# Ignore all backtest folders
-backtest/*
-
-# Ignore everything inside data
-data/*
+backtest/
+data/
 
 # Ignore strategies
 strategies/ha_mtf_stoch.py

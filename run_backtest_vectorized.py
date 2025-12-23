@@ -32,6 +32,12 @@ from backtest.execution.simulator import SimulatedBroker
 from backtest.metrics.calculator import BacktestResult, build_backtest_result
 from backtest.metrics.report import save_results, print_summary
 from backtest.visualization import generate_html_dashboard
+from backtest.utils import (
+    ET,
+    format_df_for_csv,
+    get_signal_columns,
+    save_debug_csv,
+)
 
 # Project paths
 PROJECT_ROOT = Path(__file__).parent
@@ -90,6 +96,7 @@ class VectorizedBacktestEngine:
         self._signals: Dict[str, List[Dict[str, Any]]] = {}
         self._results: Dict[str, Any] = {}
         self._result: Optional[BacktestResult] = None
+        self._df_with_signals: Dict[str, pd.DataFrame] = {}  # Full 1min data with signals
 
         # Ensure data directories exist
         self._ensure_directories()
@@ -182,6 +189,9 @@ class VectorizedBacktestEngine:
             print(f"  {symbol}: Computing signals (vectorized)...")
             df_with_signals = strategy_class.compute_signals(df)
 
+            # Store full dataframe for later CSV export
+            self._df_with_signals[symbol] = df_with_signals.copy()
+
             # Extract BUY signals (signal == 1)
             buy_mask = df_with_signals["signal"] == 1
             buy_rows = df_with_signals[buy_mask]
@@ -189,17 +199,48 @@ class VectorizedBacktestEngine:
             # Get strategy quantity
             qty = getattr(strategy_class, "QUANTITY", 10)
 
-            # Convert to signal dicts (same format as bar-by-bar)
+            # Auto-detect signal detail columns (dynamic for all strategies)
+            # Exclude base OHLC columns, keep all signal-related columns
+            base_cols = {"date", "open", "high", "low", "close", "volume", "signal"}
+            detail_cols = [
+                col for col in df_with_signals.columns
+                if col not in base_cols
+            ]
+
+            # Convert to signal dicts with details
             signals = []
             for idx, row in buy_rows.iterrows():
-                signals.append({
+                # Convert timestamp to ET
+                ts = pd.to_datetime(row["date"])
+                if ts.tzinfo is not None:
+                    ts_et = ts.astimezone(ET)
+                else:
+                    ts_et = ts.tz_localize("UTC").astimezone(ET)
+
+                signal_dict = {
                     "symbol": symbol,
                     "action": "BUY",
                     "quantity": qty,
-                    "price": row["close"],
-                    "timestamp": pd.to_datetime(row["date"]),
+                    "price": round(row["close"], 3),
+                    "timestamp": ts_et.strftime("%Y-%m-%d %H:%M:%S"),
                     "bar_index": idx,
-                })
+                }
+
+                # Add signal detail columns if they exist
+                for col in detail_cols:
+                    if col in row.index:
+                        val = row[col]
+                        if pd.isna(val):
+                            signal_dict[col] = ""
+                        elif isinstance(val, bool) or isinstance(val, (int, float)):
+                            if isinstance(val, float):
+                                signal_dict[col] = round(val, 3)
+                            else:
+                                signal_dict[col] = val
+                        else:
+                            signal_dict[col] = val
+
+                signals.append(signal_dict)
 
             print(f"  {symbol}: {len(signals):,} BUY signals extracted")
             all_signals[symbol] = signals
@@ -301,6 +342,12 @@ class VectorizedBacktestEngine:
             result=self._result,
             signals=all_signals,
         )
+
+        # Save complete 1min DataFrames with all signal details for debugging
+        for symbol, df in self._df_with_signals.items():
+            debug_path = results_dir / f"signal_debug_{symbol}.csv"
+            save_debug_csv(df, debug_path)
+            print(f"  Signal debug data saved: {debug_path}")
 
         # Generate HTML dashboard
         if self._result is not None:

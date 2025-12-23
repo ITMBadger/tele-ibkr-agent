@@ -31,6 +31,9 @@ from services.logger import StrategyLogger
 # Type alias for order handler: (symbol, action, quantity) -> bool
 OrderHandler = Callable[[str, str, int], bool]
 
+# Type alias for debug collector: (row_dict) -> None
+DebugCollector = Callable[[dict], None]
+
 
 class BaseStrategy(ABC):
     """
@@ -66,6 +69,7 @@ class BaseStrategy(ABC):
         time_provider: Callable[[], float] | None = None,
         order_handler: OrderHandler | None = None,
         position_checker: Callable[[str], bool] | None = None,
+        debug_collector: DebugCollector | None = None,
     ):
         """
         Initialize strategy with symbol and data service.
@@ -76,6 +80,7 @@ class BaseStrategy(ABC):
             time_provider: Optional callable returning current time (for backtesting)
             order_handler: Optional callable to handle orders (for backtesting)
             position_checker: Optional callable to check position (for backtesting)
+            debug_collector: Optional callable to collect debug rows (for backtesting)
         """
         self.symbol = symbol.upper()
         self.tiingo = tiingo
@@ -87,6 +92,7 @@ class BaseStrategy(ABC):
         self._time_provider = time_provider or time.time
         self._order_handler = order_handler
         self._position_checker = position_checker
+        self._debug_collector = debug_collector
     
     @abstractmethod
     async def execute(self) -> None:
@@ -128,6 +134,32 @@ class BaseStrategy(ABC):
             f"{cls.__name__} does not implement compute_signals(). "
             "Use bar-by-bar backtest instead of vectorized."
         )
+
+    def capture_debug_row(self, df: pd.DataFrame) -> None:
+        """
+        Capture the last row of a signal DataFrame for debug export.
+
+        Call this in execute() after compute_signals() to enable bar-by-bar
+        debug CSV export during backtesting. Uses dependency injection -
+        the debug_collector is passed during strategy initialization.
+
+        Args:
+            df: DataFrame returned by compute_signals() with all indicator columns
+
+        Example usage in execute():
+            df = self.compute_signals(df)
+            self.capture_debug_row(df)  # <-- Add this line
+        """
+        # Skip if no collector injected (live mode or collector not needed)
+        if self._debug_collector is None:
+            return
+
+        if df is None or len(df) == 0:
+            return
+
+        # Pass the last row to the injected collector
+        last_row = df.iloc[-1].to_dict()
+        self._debug_collector(last_row)
 
     @staticmethod
     def to_df(ohlc: list[dict]) -> pd.DataFrame:
