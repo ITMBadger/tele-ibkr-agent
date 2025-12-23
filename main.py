@@ -1,0 +1,198 @@
+# main.py - Application entry point and orchestration.
+"""
+This file:
+1. Starts the IBKR service in a background thread (Thread 2)
+2. Creates and injects dependencies between services
+3. Runs the async event loop with Telegram bot (Thread 1)
+4. Strategy loop starts on-demand when user activates a strategy
+
+Run with: python main.py
+"""
+
+import os
+import asyncio
+import signal
+import time
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+# Project paths
+PROJECT_ROOT = Path(__file__).parent
+CACHE_DIR = PROJECT_ROOT / "data" / "cache"
+
+# Load environment variables
+load_dotenv(PROJECT_ROOT / ".env")
+
+import context
+from services.ibkr import IBKRService
+from services.tiingo import TiingoService
+from services.agent import GeminiAgent
+from services.telegram import TelegramBot
+from services.logger import terminal_logger, StrategyLogger
+from services.time_utils import get_et_now
+
+# Auto-shutdown time (Eastern Time, 24h format)
+AUTO_SHUTDOWN_HOUR = 16
+AUTO_SHUTDOWN_MINUTE = 15  # 4:15 PM ET (15 min after market close)
+
+
+async def strategy_loop() -> None:
+    """
+    Background task that executes active strategies.
+    """
+    loop_tick = int(os.getenv("STRATEGY_LOOP_TICK", "10"))
+    print(f"Strategy loop started (tick: {loop_tick}s, aligned to clock)")
+
+    while not context.shutdown_event.is_set():
+        try:
+            # Auto-shutdown check
+            et_now = get_et_now()
+            if et_now.hour > AUTO_SHUTDOWN_HOUR or (
+                et_now.hour == AUTO_SHUTDOWN_HOUR and et_now.minute >= AUTO_SHUTDOWN_MINUTE
+            ):
+                print(f"🛑 Auto-shutdown triggered at {et_now.strftime('%H:%M')} ET")
+                context.log(f"🛑 Auto-shutdown at {et_now.strftime('%H:%M')} ET", "info")
+                context.shutdown_event.set()
+                break
+
+            active = context.active_strategies.copy()
+
+            if active:
+                executed_count = 0
+                tasks = []
+                
+                for symbol, data in active.items():
+                    strategy = data.get("strategy")
+                    if strategy:
+                        if strategy.should_run():
+                            name = data.get("name", "Unknown")
+                            ts = time.strftime('%H:%M:%S')
+                            print(f"   🚀 [{ts}] Executing: {name} on {symbol}")
+                            tasks.append(strategy.execute())
+                            executed_count += 1
+
+                if tasks:
+                    await asyncio.gather(*tasks, return_exceptions=True)
+
+                if executed_count == 0:
+                    ts = time.strftime('%H:%M:%S')
+                    now = time.time()
+                    sleep_time = loop_tick - (now % loop_tick)
+                    # Avoid near-zero sleeps (edge case when at boundary)
+                    if sleep_time < 0.5:
+                        sleep_time = loop_tick
+                    print(f"   ⏳ [{ts}] Tick ({len(active)} active, sleep {sleep_time:.1f}s)")
+                    await asyncio.sleep(sleep_time)
+                    continue
+            else:
+                # No strategies active at all
+                pass
+
+            # Sleep until next aligned tick
+            now = time.time()
+            sleep_time = loop_tick - (now % loop_tick)
+            if sleep_time < 0.5:
+                sleep_time = loop_tick
+            print(f"   ⏳ [{time.strftime('%H:%M:%S')}] Idle ({len(active)} active, sleep {sleep_time:.1f}s)")
+            await asyncio.sleep(sleep_time)
+
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            print(f"Strategy loop error: {e}")
+            context.log(f"Strategy error: {e}", "error")
+            await asyncio.sleep(loop_tick)
+
+    print("Strategy loop stopped")
+
+
+def handle_shutdown(signum, frame):
+    """Handle shutdown signals."""
+    print("\nShutting down...")
+    context.shutdown_event.set()
+
+
+def clear_cache():
+    """Delete all files in the data/cache directory on startup."""
+    if CACHE_DIR.exists() and CACHE_DIR.is_dir():
+        files = list(CACHE_DIR.glob("*"))
+        if files:
+            print(f"🧹 Clearing cache ({len(files)} files)...")
+            for file in files:
+                try:
+                    if file.is_file():
+                        file.unlink()
+                except Exception as e:
+                    print(f"   ⚠️ Error deleting {file.name}: {e}")
+        else:
+            print("✨ Cache is already clean.")
+    else:
+        # Create it if it doesn't exist
+        CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+
+async def main():
+    """Main application entry point."""
+    # Start terminal logging FIRST (before any print)
+    log_path = terminal_logger.start()
+
+    print("=" * 50)
+    print("Telegram-IBKR Trading Bot")
+    print("=" * 50)
+    print(f"Terminal log: {log_path}")
+
+    # Clear cache on startup
+    clear_cache()
+
+    signal.signal(signal.SIGINT, handle_shutdown)
+    signal.signal(signal.SIGTERM, handle_shutdown)
+
+    # 1. Start IBKR in background thread
+    print("Starting IBKR service...")
+    ibkr = IBKRService()
+    ibkr_thread = ibkr.start_thread()
+    await asyncio.sleep(2)
+
+    # 2. Create async services
+    print("Starting Tiingo service...")
+    tiingo = TiingoService()
+
+    print("Starting Gemini agent...")
+    agent = GeminiAgent(
+        tiingo_service=tiingo,
+        execution_handler=ibkr.place_order
+    )
+
+    print("Starting Telegram bot...")
+    telegram = TelegramBot(agent=agent)
+
+    # 3. Start strategy loop (always runs, handles auto-shutdown)
+    context.strategy_loop_task = asyncio.create_task(strategy_loop())
+
+    # 4. Run
+    print("Bot is running! Send /start to your Telegram bot.")
+    print("Press Ctrl+C to stop.")
+    print("=" * 50)
+
+    try:
+        await telegram.start()
+    except asyncio.CancelledError:
+        pass
+    finally:
+        print("Cleaning up...")
+        context.shutdown_event.set()
+        await tiingo.close()
+        await telegram.stop()
+        ibkr_thread.join(timeout=5)
+
+        # Clean up loggers
+        StrategyLogger.clear_all()
+        print("Shutdown complete.")
+
+        # Stop terminal logging LAST
+        terminal_logger.stop()
+
+
+if __name__ == "__main__":
+    asyncio.run(main())

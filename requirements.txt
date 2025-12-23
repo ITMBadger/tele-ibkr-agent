@@ -1,0 +1,16 @@
+# Core dependencies for Telegram-IBKR Trading Bot
+
+# Async HTTP client (for Tiingo API and Telegram Bot API)
+aiohttp==3.9.5
+
+# Google Gemini AI
+google-generativeai==0.8.3
+
+# Interactive Brokers API
+ibapi==10.19.3
+
+# Environment variables
+python-dotenv==1.0.1
+
+# Market calendar for NYSE trading hours
+pandas-market-calendars
