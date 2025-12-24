@@ -25,7 +25,7 @@ load_dotenv(PROJECT_ROOT / ".env")
 
 import context
 from services.ibkr import IBKRService
-from services.tiingo import TiingoService
+from services.tiingo import TiingoService, TiingoCache
 from services.agent import GeminiAgent
 from services.telegram import TelegramBot
 from services.logger import terminal_logger, SignalLogger
@@ -114,21 +114,15 @@ def handle_shutdown(signum, frame):
 
 def clear_cache():
     """Delete all files in the data/cache directory on startup."""
-    if CACHE_DIR.exists() and CACHE_DIR.is_dir():
-        files = list(CACHE_DIR.glob("*"))
-        if files:
-            print(f"🧹 Clearing cache ({len(files)} files)...")
-            for file in files:
-                try:
-                    if file.is_file():
-                        file.unlink()
-                except Exception as e:
-                    print(f"   ⚠️ Error deleting {file.name}: {e}")
-        else:
-            print("✨ Cache is already clean.")
+    cache = TiingoCache(CACHE_DIR)
+    files = cache.list_files()
+
+    if files:
+        print(f"Clearing cache ({len(files)} files)...")
+        count = cache.clear_all()
+        print(f"  Cleared {count} files.")
     else:
-        # Create it if it doesn't exist
-        CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        print("Cache is already clean.")
 
 
 async def main():

@@ -31,8 +31,8 @@ from backtest.execution.simulator import SimulatedBroker
 from backtest.metrics.calculator import BacktestResult, build_backtest_result
 from backtest.metrics.report import save_results, print_summary
 from backtest.visualization import generate_html_dashboard
-from backtest.utils import ET
 from services.logger import SignalLogger
+from services.tiingo import ET_DATETIME_FORMAT
 
 PROJECT_ROOT = Path(__file__).parent
 
@@ -54,13 +54,12 @@ CONFIG = BacktestConfig(
     #            "ha_mtf_stoch"
     strategy="ha_mtf_stoch",
 
-    # ---- Date range ----
-    start_date="2025-01-01",
-    end_date="2026-01-01",
+    # ---- Date range (relative) ----
+    months_back=12,  # 12 months = 1 year of data
 
     # ---- Execution simulation ----
     initial_capital=100_000.0,
-    slippage_pct=0.001,        # 0.1% slippage
+    slippage_pct=0.0002,        # 0.02% slippage
     commission_per_trade=0.5,  # $0.5 per trade
 
     # ---- Take Profit / Stop Loss ----
@@ -146,8 +145,7 @@ class VectorizedBacktestEngine:
         for symbol in self.config.symbols:
             file_path = ensure_historical_data(
                 symbol=symbol,
-                start_date=self.config.start_date,
-                end_date=self.config.end_date,
+                months_back=self.config.months_back,
                 interval="1min",
                 data_dir=data_dir,
             )
@@ -205,19 +203,16 @@ class VectorizedBacktestEngine:
             # Convert to signal dicts with details
             signals = []
             for idx, row in buy_rows.iterrows():
-                # Convert timestamp to ET
+                # Format timestamp (already naive ET from loader)
                 ts = pd.to_datetime(row["date"])
-                if ts.tzinfo is not None:
-                    ts_et = ts.astimezone(ET)
-                else:
-                    ts_et = ts.tz_localize("UTC").astimezone(ET)
+                ts_str = ts.strftime(ET_DATETIME_FORMAT)
 
                 signal_dict = {
                     "symbol": symbol,
                     "action": "BUY",
                     "quantity": qty,
                     "price": round(row["close"], 3),
-                    "timestamp": ts_et.strftime("%Y-%m-%d %H:%M:%S"),
+                    "timestamp": ts_str,
                     "bar_index": idx,
                 }
 

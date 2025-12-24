@@ -39,9 +39,8 @@ CONFIG = BacktestConfig(
     #            "ema_50_aggressive", "ema_20_scalp", "rsi_bounce"
     strategy="ha_mtf_stoch",
 
-    # ---- Date range ----
-    start_date="2025-01-01",
-    end_date="2026-01-01",
+    # ---- Date range (relative) ----
+    months_back=12,  # 12 months = 1 year of data
 
     # ---- Chunking parameters ----
     chunk_size=0,        # 0 = auto-calculate based on CPU cores
