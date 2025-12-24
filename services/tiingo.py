@@ -352,8 +352,11 @@ class TiingoService:
 
         # Convert to DataFrame for filtering
         df = pd.DataFrame(bars)
-        df['datetime'] = pd.to_datetime(df['date'])
+        df['datetime'] = pd.to_datetime(df['date'], utc=True)
         df = df.set_index('datetime')
+
+        # Convert to New York time and make naive for comparison
+        df.index = df.index.tz_convert('America/New_York').tz_localize(None)
 
         # Get NYSE calendar
         nyse = mcal.get_calendar('NYSE')
@@ -364,7 +367,7 @@ class TiingoService:
         if schedule.empty:
             return []  # No market days in range
 
-        # Convert to ET and make timezone-naive for comparison
+        # Convert schedule boundaries to naive New York time
         schedule_et = schedule.copy()
         schedule_et['market_open'] = (
             schedule_et['market_open']
@@ -377,10 +380,6 @@ class TiingoService:
             .dt.tz_localize(None)
         )
 
-        # Make df index timezone-naive if needed
-        if df.index.tz is not None:
-            df.index = df.index.tz_localize(None)
-
         # Filter to market hours
         valid_mask = pd.Series(False, index=df.index)
         for _, row in schedule_et.iterrows():
@@ -390,7 +389,7 @@ class TiingoService:
             )
             valid_mask = valid_mask | day_mask
 
-        filtered_df = df[valid_mask]
+        filtered_df = df[valid_mask].reset_index()
 
         # Convert back to list of dicts
         result = []

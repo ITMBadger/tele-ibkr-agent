@@ -203,25 +203,82 @@ terminal_logger = TerminalLogger()
 
 
 # =============================================================================
-# STRATEGY LOGGER - OHLC + Indicator CSV dumps
+# SIGNAL LOGGER - Unified logging for live and backtest modes
 # =============================================================================
 
-class StrategyLogger:
+# Base directories for different modes
+STRATEGY_LOGS_DIR = Path(__file__).parent.parent / "data" / "strategy_logs"
+BACKTEST_RESULTS_DIR = Path(__file__).parent.parent / "data" / "backtest" / "results"
+
+
+class SignalLogger:
     """
-    Logs strategy OHLC data with indicators to CSV files.
+    Unified signal logger for live trading and backtesting.
 
     Features:
-    - Session-based files per symbol: strategy_{symbol}_YYYYMMDD_HHMMSS.csv
-    - Full OHLC dump (200+ bars) with indicator values
-    - Triggered on signal events and periodic intervals
+    - Mode-aware: auto-switches output directory based on mode
+    - Live mode: saves to data/strategy_logs/
+    - Backtest mode: saves to data/backtest/results/{run_id}/
+    - Supports both event logging (live) and DataFrame logging (backtest)
+
+    Usage:
+        # Live mode (default)
+        logger = SignalLogger.get_or_create("QQQ", "ema_200_long")
+        logger.log_event(ohlc_bars, indicator_cols, "BUY", True, "signal")
+
+        # Backtest mode
+        SignalLogger.set_mode("backtest", "20240115_143022")
+        logger = SignalLogger.get_or_create("QQQ", "ema_200_long")
+        logger.log_dataframe(df)  # or log_bar() per bar
+        SignalLogger.reset()  # Reset to live mode after backtest
     """
 
+    # Class-level mode state
+    _mode: str = "live"  # "live" or "backtest"
+    _run_id: str | None = None
+
     # Track loggers by symbol for session consistency
-    _instances: dict[str, "StrategyLogger"] = {}
+    _instances: dict[str, "SignalLogger"] = {}
     _lock = threading.Lock()
 
     @classmethod
-    def get_or_create(cls, symbol: str, strategy_name: str) -> "StrategyLogger":
+    def set_mode(cls, mode: str, run_id: str | None = None) -> None:
+        """
+        Set logging mode for the session.
+
+        Args:
+            mode: "live" or "backtest"
+            run_id: Required for backtest mode (e.g., "20240115_143022")
+        """
+        with cls._lock:
+            cls._mode = mode
+            cls._run_id = run_id
+
+            # Create output directory if in backtest mode
+            if mode == "backtest" and run_id:
+                output_dir = BACKTEST_RESULTS_DIR / run_id
+                output_dir.mkdir(parents=True, exist_ok=True)
+
+            # Clear existing instances when mode changes
+            cls._instances.clear()
+
+    @classmethod
+    def reset(cls) -> None:
+        """Reset to live mode and clear all instances."""
+        with cls._lock:
+            cls._mode = "live"
+            cls._run_id = None
+            cls._instances.clear()
+
+    @classmethod
+    def get_output_dir(cls) -> Path:
+        """Get current output directory based on mode."""
+        if cls._mode == "backtest" and cls._run_id:
+            return BACKTEST_RESULTS_DIR / cls._run_id
+        return STRATEGY_LOGS_DIR
+
+    @classmethod
+    def get_or_create(cls, symbol: str, strategy_name: str) -> "SignalLogger":
         """Get existing logger for symbol or create new one."""
         key = symbol.upper()
         with cls._lock:
@@ -241,15 +298,17 @@ class StrategyLogger:
         self._session_file: Path | None = None
         self._header_written = False
         self._current_columns: list[str] | None = None
-        self._lock = threading.Lock()
+        self._instance_lock = threading.Lock()
 
-        self._init_session_file()
+        # For backtest mode: accumulate rows for batch writing
+        self._backtest_rows: list[dict] = []
 
-    def _init_session_file(self) -> None:
-        """Initialize session-based CSV file."""
-        ensure_log_dir()
-        timestamp = get_et_now().strftime("%Y%m%d_%H%M%S")
-        self._session_file = LOG_DIR / f"strategy_{self.symbol}_{timestamp}.csv"
+        self._ensure_output_dir()
+
+    def _ensure_output_dir(self) -> None:
+        """Ensure output directory exists."""
+        output_dir = self.get_output_dir()
+        output_dir.mkdir(parents=True, exist_ok=True)
 
     def log_event(
         self,
@@ -260,13 +319,11 @@ class StrategyLogger:
         event_type: str = "periodic"  # "signal" or "periodic"
     ) -> bool:
         """
-        Log OHLC data with indicators to CSV.
+        Log OHLC data with indicators to CSV (for live mode).
 
         Args:
             ohlc_bars: List of OHLC dicts with keys: date, open, high, low, close, volume
             indicator_columns: Dict mapping column name to list of values
-                               e.g., {"ema_200": [485.5, 485.6, ...]}
-                               Length must match ohlc_bars
             signal: Signal type ("BUY", "SELL", "HOLD", etc.)
             triggered: Whether order was actually submitted
             event_type: "signal" (on trigger) or "periodic" (30-min snapshot)
@@ -279,14 +336,15 @@ class StrategyLogger:
 
         indicator_columns = indicator_columns or {}
 
-        with self._lock:
+        with self._instance_lock:
             try:
+                output_dir = self.get_output_dir()
+
                 # Generate unique filename for this specific event
-                # Format: strategy_SYMBOL_TYPE_YYYYMMDD_HHMMSS.csv
                 timestamp = get_et_now().strftime("%Y%m%d_%H%M%S")
                 filename = f"strategy_{self.symbol}_{event_type}_{timestamp}.csv"
-                file_path = LOG_DIR / filename
-                self._session_file = file_path  # Track last log path
+                file_path = output_dir / filename
+                self._session_file = file_path
 
                 # Build column list
                 base_cols = ["event_time", "event_type", "signal", "triggered",
@@ -294,20 +352,13 @@ class StrategyLogger:
                 indicator_col_names = sorted(indicator_columns.keys())
                 all_cols = base_cols + indicator_col_names
 
-                # Open in "w" mode for a fresh file per event
                 with open(file_path, "w", newline="", encoding="utf-8") as f:
                     writer = csv.writer(f)
-
-                    # Always write header for the new file
                     writer.writerow(all_cols)
-                    self._header_written = True
-                    self._current_columns = all_cols
 
-                    # Write each bar as a row
                     event_time = get_et_now().isoformat()
 
                     for i, bar in enumerate(ohlc_bars):
-                        # Signal/triggered only on last bar
                         is_last = i == len(ohlc_bars) - 1
 
                         row = [
@@ -323,7 +374,6 @@ class StrategyLogger:
                             bar.get("volume", ""),
                         ]
 
-                        # Add indicator values
                         for col_name in indicator_col_names:
                             values = indicator_columns.get(col_name, [])
                             if i < len(values):
@@ -334,12 +384,104 @@ class StrategyLogger:
 
                         writer.writerow(row)
 
-                print(f"   📝 Saved unique strategy CSV: {filename}")
+                print(f"   📝 Saved: {filename}")
                 return True
 
             except Exception as e:
-                print(f"[StrategyLogger] Error logging {self.symbol}: {e}")
+                print(f"[SignalLogger] Error logging {self.symbol}: {e}")
                 return False
+
+    def log_bar(self, row_dict: dict) -> None:
+        """
+        Log a single bar (for backtest mode).
+
+        Accumulates rows in memory, call flush() to write to disk.
+
+        Args:
+            row_dict: Dictionary with bar data (from df.iloc[-1].to_dict())
+        """
+        with self._instance_lock:
+            self._backtest_rows.append(row_dict.copy())
+
+    def flush(self) -> Path | None:
+        """
+        Write accumulated backtest rows to CSV.
+
+        Returns:
+            Path to the saved file, or None if no rows to write
+        """
+        with self._instance_lock:
+            if not self._backtest_rows:
+                return None
+
+            try:
+                import pandas as pd
+
+                output_dir = self.get_output_dir()
+                filename = f"signal_debug_{self.symbol}.csv"
+                file_path = output_dir / filename
+
+                df = pd.DataFrame(self._backtest_rows)
+                self._save_dataframe(df, file_path)
+
+                self._session_file = file_path
+                self._backtest_rows.clear()
+
+                print(f"   📝 Flushed {len(df)} rows: {filename}")
+                return file_path
+
+            except Exception as e:
+                print(f"[SignalLogger] Error flushing {self.symbol}: {e}")
+                return None
+
+    def log_dataframe(self, df, filename_prefix: str = "signal_debug") -> Path | None:
+        """
+        Log entire DataFrame to CSV (for vectorized backtest).
+
+        Args:
+            df: pandas DataFrame with signal data
+            filename_prefix: Prefix for the output filename
+
+        Returns:
+            Path to the saved file
+        """
+        with self._instance_lock:
+            try:
+                output_dir = self.get_output_dir()
+                filename = f"{filename_prefix}_{self.symbol}.csv"
+                file_path = output_dir / filename
+
+                self._save_dataframe(df, file_path)
+
+                self._session_file = file_path
+                print(f"   📝 Saved DataFrame: {filename}")
+                return file_path
+
+            except Exception as e:
+                print(f"[SignalLogger] Error saving DataFrame {self.symbol}: {e}")
+                return None
+
+    def _save_dataframe(self, df, file_path: Path) -> None:
+        """
+        Save DataFrame to CSV with proper formatting.
+
+        Args:
+            df: pandas DataFrame
+            file_path: Output file path
+        """
+        import pandas as pd
+
+        df_out = df.copy()
+
+        # Format date column if present
+        if "date" in df_out.columns:
+            df_out["date"] = pd.to_datetime(df_out["date"]).dt.strftime("%Y-%m-%d %H:%M:%S")
+
+        # Round float columns
+        for col in df_out.select_dtypes(include=["float64", "float32"]).columns:
+            df_out[col] = df_out[col].round(4)
+
+        df_out.to_csv(file_path, index=False)
 
     @property
     def log_path(self) -> Path | None:

@@ -170,10 +170,14 @@ tele-ibkr-agent/
 ├── .env                     # Configuration (NEVER commit to git!)
 ├── requirements.txt         # Dependencies
 ├── main.py                  # Entry point & orchestration
+├── run_backtest.py          # Bar-by-bar backtest entry point
+├── run_backtest_vectorized.py # Fast vectorized backtest entry point
 ├── models.py                # Pure data classes (TradeSignal, LogMessage)
 ├── context.py               # Thread-safe shared state & queues
+├── backtest/                # Backtest engine & components
 ├── data/                    # Runtime data
 │   ├── positions.json       # Position tracking (auto-generated)
+│   ├── backtest/            # Backtest data (OHLC, signals, results)
 │   └── cache/               # Tiingo data cache (auto-generated)
 │       └── *.json           # Cached OHLC data by symbol/interval/date
 ├── services/                # External service integrations
@@ -472,7 +476,7 @@ Optional testing mode with inline keyboards. Easy toggle on/off.
 - **Single admin**: Only the first user gets notifications
 - **Strategy-only trading**: Manual buy/sell commands removed for safety
 - **Market hours**: Doesn't check if markets are open (data is filtered to market hours)
-- **No backtesting**: Strategies run forward only
+- **Full backtesting**: Supports both bar-by-bar and vectorized backtesting
 - **No partial fills**: Assumes full order execution
 
 ---

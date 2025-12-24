@@ -14,7 +14,6 @@ import asyncio
 import signal
 import time
 from pathlib import Path
-
 from dotenv import load_dotenv
 
 # Project paths
@@ -29,7 +28,7 @@ from services.ibkr import IBKRService
 from services.tiingo import TiingoService
 from services.agent import GeminiAgent
 from services.telegram import TelegramBot
-from services.logger import terminal_logger, StrategyLogger
+from services.logger import terminal_logger, SignalLogger
 from services.time_utils import get_et_now
 
 # Auto-shutdown time (Eastern Time, 24h format)
@@ -187,7 +186,7 @@ async def main():
         ibkr_thread.join(timeout=5)
 
         # Clean up loggers
-        StrategyLogger.clear_all()
+        SignalLogger.clear_all()
         print("Shutdown complete.")
 
         # Stop terminal logging LAST

@@ -18,11 +18,10 @@ Configuration:
 """
 
 import importlib
+import pandas as pd
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Any, Type, Optional
-
-import pandas as pd
 from dotenv import load_dotenv
 
 from backtest.config import BacktestConfig
@@ -32,23 +31,18 @@ from backtest.execution.simulator import SimulatedBroker
 from backtest.metrics.calculator import BacktestResult, build_backtest_result
 from backtest.metrics.report import save_results, print_summary
 from backtest.visualization import generate_html_dashboard
-from backtest.utils import (
-    ET,
-    format_df_for_csv,
-    get_signal_columns,
-    save_debug_csv,
-)
+from backtest.utils import ET
+from services.logger import SignalLogger
 
-# Project paths
 PROJECT_ROOT = Path(__file__).parent
 
 # Load environment variables
 load_dotenv(PROJECT_ROOT / ".env")
 
 
-# ============================================================
+# ============================================================ 
 # CONFIGURATION - Edit these values
-# ============================================================
+# ============================================================ 
 
 CONFIG = BacktestConfig(
     # ---- Symbols to backtest ----
@@ -61,7 +55,7 @@ CONFIG = BacktestConfig(
     strategy="ha_mtf_stoch",
 
     # ---- Date range ----
-    start_date="2021-01-01",
+    start_date="2025-01-01",
     end_date="2026-01-01",
 
     # ---- Execution simulation ----
@@ -75,9 +69,9 @@ CONFIG = BacktestConfig(
 )
 
 
-# ============================================================
+# ============================================================ 
 # VECTORIZED ENGINE
-# ============================================================
+# ============================================================ 
 
 class VectorizedBacktestEngine:
     """
@@ -97,6 +91,7 @@ class VectorizedBacktestEngine:
         self._results: Dict[str, Any] = {}
         self._result: Optional[BacktestResult] = None
         self._df_with_signals: Dict[str, pd.DataFrame] = {}  # Full 1min data with signals
+        self._results_dir: Optional[Path] = None
 
         # Ensure data directories exist
         self._ensure_directories()
@@ -325,6 +320,9 @@ class VectorizedBacktestEngine:
     ) -> Path:
         """Save all results to disk including HTML dashboard."""
         if results_dir is None:
+            results_dir = self._results_dir
+
+        if results_dir is None:
             run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
             results_dir = Path(self.config.results_dir) / f"vectorized_{run_id}"
 
@@ -343,11 +341,10 @@ class VectorizedBacktestEngine:
             signals=all_signals,
         )
 
-        # Save complete 1min DataFrames with all signal details for debugging
+        # Save complete 1min DataFrames with all signal details using SignalLogger
         for symbol, df in self._df_with_signals.items():
-            debug_path = results_dir / f"signal_debug_{symbol}.csv"
-            save_debug_csv(df, debug_path)
-            print(f"  Signal debug data saved: {debug_path}")
+            logger = SignalLogger.get_or_create(symbol, self.config.strategy)
+            logger.log_dataframe(df)
 
         # Generate HTML dashboard
         if self._result is not None:
@@ -362,28 +359,38 @@ class VectorizedBacktestEngine:
 
     def run(self) -> BacktestResult:
         """Run complete vectorized backtest pipeline."""
-        # Step 1: Ensure data
-        self.ensure_data()
+        # Set up run_id and SignalLogger mode
+        run_id = f"vectorized_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        self._results_dir = Path(self.config.results_dir) / run_id
+        SignalLogger.set_mode("backtest", run_id)
 
-        # Step 2: Generate signals (VECTORIZED)
-        self.generate_signals_vectorized()
+        try:
+            # Step 1: Ensure data
+            self.ensure_data()
 
-        # Step 3: Run simulation (uses shared SimulatedBroker)
-        result = self.run_simulation()
+            # Step 2: Generate signals (VECTORIZED)
+            self.generate_signals_vectorized()
 
-        # Step 4: Print summary
-        print("\n[Step 4] Performance Summary")
-        print_summary(result)
+            # Step 3: Run simulation (uses shared SimulatedBroker)
+            result = self.run_simulation()
 
-        # Step 5: Save results
-        self.save_results()
+            # Step 4: Print summary
+            print("\n[Step 4] Performance Summary")
+            print_summary(result)
 
-        return result
+            # Step 5: Save results
+            self.save_results()
+
+            return result
+
+        finally:
+            # Reset SignalLogger to live mode
+            SignalLogger.reset()
 
 
-# ============================================================
+# ============================================================ 
 # MAIN
-# ============================================================
+# ============================================================ 
 
 def main():
     """Run the vectorized backtest."""

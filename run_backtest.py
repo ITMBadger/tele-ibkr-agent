@@ -16,14 +16,11 @@ Configuration:
     Edit the CONFIG section below to customize your backtest.
 """
 
-import os
 from pathlib import Path
 from dotenv import load_dotenv
-
 from backtest.config import BacktestConfig
 from backtest.engine import BacktestEngine
 
-# Project paths
 PROJECT_ROOT = Path(__file__).parent
 
 # Load environment variables

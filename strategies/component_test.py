@@ -17,7 +17,7 @@ import context
 from services import order_service
 from services.tiingo import TiingoService
 from services.time_utils import format_iso_to_et
-from services.logger import StrategyLogger
+from services.logger import SignalLogger
 
 
 # === TESTING CONFIGURATION ===
@@ -148,7 +148,7 @@ async def _execute_test_buy() -> str:
     )
 
     # Log OHLC data to CSV (same as other strategies)
-    logger = StrategyLogger.get_or_create(
+    logger = SignalLogger.get_or_create(
         symbol=TEST_SYMBOL,
         strategy_name="Component Test"
     )
