@@ -25,6 +25,7 @@ import pandas as pd
 
 import context
 from services import pos_manager, order_service
+from services.exits import check_exit
 from services.logger import SignalLogger
 
 
@@ -49,11 +50,9 @@ class BaseStrategy(ABC):
     # === OPTIONAL: Common attributes ===
     QUANTITY: int = 10     # Default shares per trade
 
-    # === OPTIONAL: Position Management (override in subclass) ===
-    TAKE_PROFIT_PCT: float | None = None   # e.g., 2.0 for +2%
-    STOP_LOSS_PCT: float | None = None     # e.g., 1.0 for -1%
-    TAKE_PROFIT_PRICE: float | None = None # Absolute TP price
-    STOP_LOSS_PRICE: float | None = None   # Absolute SL price
+    # === EXIT STRATEGY (override in subclass if needed) ===
+    STOP_LOSS_PCT: float = 1.0     # Default 1% stop loss
+    TAKE_PROFIT_PCT: float = 2.0   # Default 2% take profit
 
     # === LOGGING CONFIGURATION ===
     PERIODIC_LOG_INTERVAL: int = 1800  # 30 minutes in seconds
@@ -226,16 +225,23 @@ class BaseStrategy(ABC):
 
         Args:
             quantity: Number of shares (uses QUANTITY if None)
-            entry_price: Entry price for tracking (optional)
-            take_profit: Take profit price (uses class default if None)
-            stop_loss: Stop loss price (uses class default if None)
+            entry_price: Entry price for tracking (auto-calculates TP/SL if provided)
+            take_profit: Take profit price (auto-calculated from % if None and entry_price provided)
+            stop_loss: Stop loss price (auto-calculated from % if None and entry_price provided)
 
         Returns:
             bool: True if order submitted successfully
         """
         qty = quantity or self.QUANTITY
-        tp = take_profit or self.TAKE_PROFIT_PRICE
-        sl = stop_loss or self.STOP_LOSS_PRICE
+
+        # Auto-calculate TP/SL from percentages if entry_price provided
+        if entry_price and (take_profit is None or stop_loss is None):
+            calc_tp, calc_sl = self.calculate_stops(entry_price, "LONG")
+            tp = take_profit if take_profit is not None else calc_tp
+            sl = stop_loss if stop_loss is not None else calc_sl
+        else:
+            tp = take_profit
+            sl = stop_loss
 
         if self._order_handler:
             success = self._order_handler(self.symbol, "BUY", qty)
@@ -253,7 +259,7 @@ class BaseStrategy(ABC):
                 take_profit=tp,
                 stop_loss=sl
             )
-            self.log(f"Opened LONG {qty} shares")
+            self.log(f"Opened LONG {qty} shares [TP: ${tp:.2f}] [SL: ${sl:.2f}]" if tp and sl else f"Opened LONG {qty} shares")
 
         return success
 
@@ -269,16 +275,23 @@ class BaseStrategy(ABC):
 
         Args:
             quantity: Number of shares (uses QUANTITY if None)
-            entry_price: Entry price for tracking (optional)
-            take_profit: Take profit price (uses class default if None)
-            stop_loss: Stop loss price (uses class default if None)
+            entry_price: Entry price for tracking (auto-calculates TP/SL if provided)
+            take_profit: Take profit price (auto-calculated from % if None and entry_price provided)
+            stop_loss: Stop loss price (auto-calculated from % if None and entry_price provided)
 
         Returns:
             bool: True if order submitted successfully
         """
         qty = quantity or self.QUANTITY
-        tp = take_profit or self.TAKE_PROFIT_PRICE
-        sl = stop_loss or self.STOP_LOSS_PRICE
+
+        # Auto-calculate TP/SL from percentages if entry_price provided
+        if entry_price and (take_profit is None or stop_loss is None):
+            calc_tp, calc_sl = self.calculate_stops(entry_price, "SHORT")
+            tp = take_profit if take_profit is not None else calc_tp
+            sl = stop_loss if stop_loss is not None else calc_sl
+        else:
+            tp = take_profit
+            sl = stop_loss
 
         if self._order_handler:
             success = self._order_handler(self.symbol, "SELL", qty)
@@ -296,7 +309,7 @@ class BaseStrategy(ABC):
                 take_profit=tp,
                 stop_loss=sl
             )
-            self.log(f"Opened SHORT {qty} shares")
+            self.log(f"Opened SHORT {qty} shares [TP: ${tp:.2f}] [SL: ${sl:.2f}]" if tp and sl else f"Opened SHORT {qty} shares")
 
         return success
 
@@ -424,6 +437,106 @@ class BaseStrategy(ABC):
             return current_price <= sl
         else:  # SHORT
             return current_price >= sl
+
+    def calculate_stops(self, entry_price: float, direction: str) -> tuple[float, float]:
+        """
+        Calculate TP and SL prices from percentages.
+
+        Args:
+            entry_price: Entry price for the position
+            direction: "LONG" or "SHORT"
+
+        Returns:
+            Tuple of (tp_price, sl_price)
+        """
+        if direction == "LONG":
+            tp = entry_price * (1 + self.TAKE_PROFIT_PCT / 100)
+            sl = entry_price * (1 - self.STOP_LOSS_PCT / 100)
+        else:  # SHORT
+            tp = entry_price * (1 - self.TAKE_PROFIT_PCT / 100)
+            sl = entry_price * (1 + self.STOP_LOSS_PCT / 100)
+        return round(tp, 2), round(sl, 2)
+
+    def check_stops(self, current_price: float) -> str | None:
+        """
+        Check if TP or SL should trigger.
+
+        Args:
+            current_price: Current market price
+
+        Returns:
+            "TP" if take profit triggered, "SL" if stop loss triggered, None otherwise
+        """
+        # Check SL first (risk management priority)
+        if self.check_stop_loss(current_price):
+            return "SL"
+        if self.check_take_profit(current_price):
+            return "TP"
+        return None
+
+    async def check_and_close_if_stopped(self) -> bool:
+        """
+        Check TP/SL and close position if triggered.
+        Call this at start of execute() before entry logic.
+
+        Returns:
+            bool: True if position was closed (skip entry logic)
+        """
+        if not self.is_tracked():
+            return False
+
+        # Get current price from context or fetch it
+        current_price = context.latest_prices.get(self.symbol)
+        if current_price is None:
+            # Try to fetch from tiingo
+            try:
+                ohlc = await self.tiingo.get_intraday_ohlc(self.symbol, minutes=5)
+                if ohlc:
+                    current_price = ohlc[-1].get("close")
+            except Exception:
+                pass
+
+        if current_price is None:
+            return False
+
+        exit_reason = self.check_stops(current_price)
+        if exit_reason:
+            tracked = self.get_tracked_position()
+            entry_price = tracked.get("entry_price", 0)
+            if entry_price:
+                pnl_pct = ((current_price - entry_price) / entry_price * 100)
+                self.log(f"{exit_reason} @ ${current_price:.2f} ({pnl_pct:+.1f}%)")
+            else:
+                self.log(f"{exit_reason} @ ${current_price:.2f}")
+            self.close_position()
+            return True
+        return False
+
+    @classmethod
+    def exit_check(cls, position: dict, bar_data: dict) -> dict | None:
+        """
+        Check if position should exit based on current bar data.
+        Called by backtest simulator each bar while in position.
+
+        Override this method for complex exit logic using indicators.
+
+        Args:
+            position: Dict with entry_price, direction, tp_price, sl_price
+            bar_data: Dict with high, low, open, close + any indicator values
+
+        Returns:
+            None if no exit, or dict with {price, status, reason}
+        """
+        # Use shared exit logic from services/exits.py
+        return check_exit(
+            direction=position.get("direction", "LONG"),
+            entry_price=position.get("entry_price", 0),
+            tp_price=position.get("tp_price"),
+            sl_price=position.get("sl_price"),
+            bar_high=bar_data["high"],
+            bar_low=bar_data["low"],
+            bar_open=bar_data["open"],
+        )
 
     def log(self, message: str) -> None:
         """Log a message (will be sent to Telegram). Disabled in backtest mode."""

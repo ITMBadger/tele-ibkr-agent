@@ -61,10 +61,7 @@ CONFIG = BacktestConfig(
     initial_capital=100_000.0,
     slippage_pct=0.0002,        # 0.02% slippage
     commission_per_trade=0.5,  # $0.5 per trade
-
-    # ---- Take Profit / Stop Loss ----
-    take_profit_pct=2.0,       # +2% take profit (set None to disable)
-    stop_loss_pct=1.0,         # -1% stop loss (set None to disable)
+    # Note: TP/SL now defined per-strategy in strategy class (STOP_LOSS_PCT, TAKE_PROFIT_PCT)
 )
 
 
@@ -282,13 +279,13 @@ class VectorizedBacktestEngine:
 
         print(f"  OHLC data: {len(ohlc_df):,} bars")
 
-        # Run simulation with shared SimulatedBroker
+        # Run simulation with shared SimulatedBroker (TP/SL from strategy class)
+        strategy_class = self._get_strategy_class()
         broker = SimulatedBroker(
             initial_capital=self.config.initial_capital,
             slippage_pct=self.config.slippage_pct,
             commission_per_trade=self.config.commission_per_trade,
-            take_profit_pct=self.config.take_profit_pct,
-            stop_loss_pct=self.config.stop_loss_pct,
+            strategy_class=strategy_class,
         )
 
         sim_results = broker.run_simulation(all_signals, ohlc_df)
@@ -396,7 +393,7 @@ def main():
     print(f"Strategy:      {CONFIG.strategy}")
     print(f"Period:        {CONFIG.start_date} to {CONFIG.end_date}")
     print(f"Capital:       ${CONFIG.initial_capital:,.0f}")
-    print(f"TP/SL:         {CONFIG.take_profit_pct or 'None'}% / {CONFIG.stop_loss_pct or 'None'}%")
+    print(f"TP/SL:         (from strategy class)")
     print("=" * 60)
 
     # Create engine and run backtest

@@ -28,6 +28,11 @@ class EMA200Long(BaseStrategy):
     EMA_PERIOD = 200
     QUANTITY = 10
 
+    # Exit strategy (uses defaults from BaseStrategy: 1% SL, 2% TP)
+    # Uncomment and modify to override:
+    # STOP_LOSS_PCT = 1.0
+    # TAKE_PROFIT_PCT = 2.0
+
     @classmethod
     def compute_signals(cls, df: pd.DataFrame) -> pd.DataFrame:
         """
@@ -57,6 +62,10 @@ class EMA200Long(BaseStrategy):
 
     async def execute(self) -> None:
         """Execute 200 EMA crossover logic using compute_signals()."""
+        # Check TP/SL exits first (skip entry logic if position was closed)
+        if await self.check_and_close_if_stopped():
+            return
+
         try:
             # Fetch OHLC data
             ohlc = await self.tiingo.get_daily_ohlc(

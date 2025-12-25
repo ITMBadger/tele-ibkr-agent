@@ -36,10 +36,8 @@ class IBKRService(EWrapper, EClient):
     SUMMARY_TAGS = "NetLiquidation,TotalCashValue,AvailableFunds,BuyingPower"
     SUMMARY_REQ_ID = 9000
 
-    # TEMP: Auto SL/TP Settings
-    AUTO_BRACKET_ENABLED = True
-    SL_PCT = 0.01  # 1% stop loss
-    TP_PCT = 0.02  # 2% take profit
+    # Auto bracket orders (disabled - TP/SL now handled by strategy)
+    AUTO_BRACKET_ENABLED = False
 
     def __init__(self):
         EWrapper.__init__(self)
@@ -357,9 +355,11 @@ class IBKRService(EWrapper, EClient):
             print(f"   ⚠️ Could not get price for {symbol} bracket - falling back to single order")
             return self._execute_single_order(symbol, action, quantity, order_type, limit_price, strategy_id)
 
-        # 2. Calculate Exit Prices
-        sl_price = round(price * (1 - self.SL_PCT), 2)
-        tp_price = round(price * (1 + self.TP_PCT), 2)
+        # 2. Calculate Exit Prices (hardcoded defaults for bracket orders)
+        sl_pct = 0.01  # 1% stop loss
+        tp_pct = 0.02  # 2% take profit
+        sl_price = round(price * (1 - sl_pct), 2)
+        tp_price = round(price * (1 + tp_pct), 2)
 
         # 3. Setup IDs (reserve 3 IDs)
         parent_id = self._next_order_id

@@ -29,6 +29,10 @@ class EMA20Scalp(BaseStrategy):
     EMA_PERIOD = 20
     QUANTITY = 50  # Larger size for scalping
 
+    # Exit strategy (tighter stops for scalping)
+    STOP_LOSS_PCT = 0.5   # 0.5% stop loss (tighter for scalping)
+    TAKE_PROFIT_PCT = 1.0  # 1% take profit (smaller, faster exits)
+
     @classmethod
     def compute_signals(cls, df: pd.DataFrame) -> pd.DataFrame:
         """
@@ -58,6 +62,10 @@ class EMA20Scalp(BaseStrategy):
 
     async def execute(self) -> None:
         """Execute 20 EMA scalping logic using compute_signals()."""
+        # Check TP/SL exits first (skip entry logic if position was closed)
+        if await self.check_and_close_if_stopped():
+            return
+
         try:
             ohlc = await self.tiingo.get_daily_ohlc(
                 self.symbol, days=self.EMA_PERIOD + 30

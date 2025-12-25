@@ -5,7 +5,8 @@
       "Bash(python3:*)",
       "Bash(tree:*)",
       "Bash(timeout 30 python:*)",
-      "Bash(timeout 30 python3:*)"
+      "Bash(timeout 30 python3:*)",
+      "Bash(grep:*)"
     ]
   }
 }

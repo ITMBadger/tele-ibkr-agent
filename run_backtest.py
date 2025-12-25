@@ -48,12 +48,9 @@ CONFIG = BacktestConfig(
 
     # ---- Execution simulation ----
     initial_capital=100_000.0,
-    slippage_pct=0.001,        # 0.1% slippage
+    slippage_pct=0.0002,        # 0.02% slippage
     commission_per_trade=0.5,  # $0.5 per trade
-
-    # ---- Take Profit / Stop Loss ----
-    take_profit_pct=2.0,       # +2% take profit (set None to disable)
-    stop_loss_pct=1.0,         # -1% stop loss (set None to disable)
+    # Note: TP/SL now defined per-strategy in strategy class (STOP_LOSS_PCT, TAKE_PROFIT_PCT)
 
     # ---- Parallelism ----
     max_workers=0,  # 0 = auto-use Physical Cores - 1
@@ -77,7 +74,7 @@ def main():
     print(f"Strategy:      {CONFIG.strategy}")
     print(f"Period:        {CONFIG.start_date} to {CONFIG.end_date}")
     print(f"Capital:       ${CONFIG.initial_capital:,.0f}")
-    print(f"TP/SL:         {CONFIG.take_profit_pct or 'None'}% / {CONFIG.stop_loss_pct or 'None'}%")
+    print(f"TP/SL:         (from strategy class)")
     print(f"Chunk size:    {CONFIG.chunk_size:,} bars")
     print(f"Warmup:        {CONFIG.warmup_size:,} bars")
     print(f"Max workers:   {CONFIG.max_workers}")
