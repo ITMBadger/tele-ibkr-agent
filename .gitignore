@@ -10,3 +10,4 @@ from_other_project/
 
 # Ignore strategies
 strategies/ha_*
+strategies/strat_*

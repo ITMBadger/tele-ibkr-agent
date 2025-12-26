@@ -158,6 +158,27 @@ class BaseStrategy(ABC):
     def to_df(ohlc: list[dict]) -> pd.DataFrame:
         """Convert list of OHLC dicts to DataFrame."""
         return pd.DataFrame(ohlc)
+
+    @classmethod
+    def finalize_signals(cls, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Standardize and stabilize signals before returning.
+
+        This centralizes the 'Safety Shift' logic:
+        1. Shifts the 'signal' column by 1 to prevent repainting.
+        2. Fills NaNs with 0 (HOLD).
+        3. Ensures signal is integer type.
+
+        Usage at the end of compute_signals:
+            return cls.finalize_signals(df)
+        """
+        if "signal" not in df.columns:
+            return df
+
+        df = df.copy()
+        # The Safety Shift: Signal at N is based on completion of N-1
+        df["signal"] = df["signal"].shift(1).fillna(0).astype(int)
+        return df
     
     def should_run(self) -> bool:
         """
@@ -182,10 +203,18 @@ class BaseStrategy(ABC):
         return False
     
     def has_position(self) -> bool:
-        """Check if we currently hold a position in this symbol."""
+        """
+        Check if we currently hold a position in this symbol.
+        Checks both IBKR real-time data and local tracking to prevent double-entries.
+        """
         if self._position_checker:
             return self._position_checker(self.symbol)
-        # Use get_positions_for_account() which handles "ACCOUNT:SYMBOL" keys
+            
+        # 1. Check local pos_manager (immediate update after submission)
+        if self.is_tracked():
+            return True
+
+        # 2. Check IBKR actual positions (source of truth from exchange)
         account_positions = context.get_positions_for_account()
         position = account_positions.get(self.symbol)
         return position is not None and position.get("qty", 0) > 0

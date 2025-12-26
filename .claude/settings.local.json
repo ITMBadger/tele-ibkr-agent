@@ -1,12 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Bash(python3 -m py_compile:*)",
-      "Bash(python3:*)",
-      "Bash(tree:*)",
-      "Bash(timeout 30 python:*)",
-      "Bash(timeout 30 python3:*)",
-      "Bash(grep:*)"
+      "Bash(python -c:*)",
+      "Bash(python3:*)"
     ]
   }
 }

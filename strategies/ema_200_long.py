@@ -58,7 +58,7 @@ class EMA200Long(BaseStrategy):
         # Handle warmup NaN
         df.loc[df["ema"].isna(), "signal"] = 0
 
-        return df
+        return cls.finalize_signals(df)
 
     async def execute(self) -> None:
         """Execute 200 EMA crossover logic using compute_signals()."""
@@ -78,9 +78,13 @@ class EMA200Long(BaseStrategy):
             df = self.to_df(ohlc)
             df = self.compute_signals(df)
 
-            # Get current values
+            # GET SIGNALS (iloc[-1] contains the shifted signal from the completed bar)
             current_signal = int(df["signal"].iloc[-1])
-            current_price = df["close"].iloc[-1]
+            
+            # GET TRIGGER PRICE (iloc[-2] is the finalized close of the signal bar)
+            # This ensures slippage checks compare against the backtest-identical price.
+            current_price = df["close"].iloc[-2]
+            
             ema_value = df["ema"].iloc[-1]
 
             # Prepare indicator columns for logging

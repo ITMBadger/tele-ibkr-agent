@@ -2,7 +2,7 @@
 """
 Strategy Backtest Dashboard - NiceGUI Application
 
-Interactive UI for running ha_mtf_stoch_ema backtests with configurable signals.
+Interactive UI for running strategy backtests with configurable signals.
 
 Usage:
     python ui_backtest.py
@@ -11,8 +11,11 @@ Then open http://localhost:8080 in your browser.
 """
 
 import asyncio
+import traceback
 import webbrowser
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Callable, Optional
 
 from dotenv import load_dotenv
 from nicegui import ui, run
@@ -21,8 +24,162 @@ from nicegui import ui, run
 PROJECT_ROOT = Path(__file__).parent
 load_dotenv(PROJECT_ROOT / ".env")
 
-from ui.state import AppState
-from ui.runner import run_backtest
+
+# ============================================================
+# CONFIGURATION - Edit these defaults as needed
+# ============================================================
+
+# Strategy settings
+DEFAULT_STRATEGY = "strat_multi_toggle"
+DEFAULT_SYMBOL = "QQQ"
+DEFAULT_MONTHS_BACK = 12
+
+# Capital & costs
+DEFAULT_INITIAL_CAPITAL = 100_000.0
+DEFAULT_SLIPPAGE_PCT = 0.0002  # 0.02%
+DEFAULT_COMMISSION_PER_TRADE = 0.5
+
+# Backtest mode
+DEFAULT_MODE = "vectorized"  # "vectorized" or "multiprocessing"
+
+# Default signal configuration (mirrors SignalType in strat_multi_toggle.py)
+DEFAULT_SIGNALS = {
+    "STOCH_RISING": True,      # 30m Stochastic %D rising
+    "HA_TWO_GREEN": True,       # Last 2 completed 5m HA bars are green
+    "BB_TOUCH": True,           # HA low touched lower Bollinger Band
+    "ABOVE_EMA_200": False,     # Price above 200 EMA
+}
+
+# UI settings
+UI_PORT = 8080
+UI_TITLE = "Strategy Backtest"
+
+
+# ============================================================
+# STATE MANAGEMENT
+# ============================================================
+
+@dataclass
+class AppState:
+    """Central state for the backtest UI. All UI components read/write to this state."""
+
+    # Backtest mode
+    mode: str = DEFAULT_MODE
+
+    # Signal toggles
+    signals: dict = field(default_factory=lambda: DEFAULT_SIGNALS.copy())
+
+    # Backtest config
+    strategy: str = DEFAULT_STRATEGY
+    symbol: str = DEFAULT_SYMBOL
+    months_back: int = DEFAULT_MONTHS_BACK
+    initial_capital: float = DEFAULT_INITIAL_CAPITAL
+    slippage_pct: float = DEFAULT_SLIPPAGE_PCT
+    commission_per_trade: float = DEFAULT_COMMISSION_PER_TRADE
+
+    # Run state
+    running: bool = False
+    progress: str = ""
+    error: str = ""
+
+    # Results
+    result_path: Optional[Path] = None
+    dashboard_path: Optional[Path] = None
+
+    def get_enabled_signals(self) -> set:
+        """Get set of enabled signal names."""
+        return {name for name, enabled in self.signals.items() if enabled}
+
+    def reset_run_state(self):
+        """Reset state before a new run."""
+        self.running = False
+        self.progress = ""
+        self.error = ""
+        self.result_path = None
+        self.dashboard_path = None
+
+
+# ============================================================
+# BACKTEST EXECUTION
+# ============================================================
+
+def run_backtest(
+    state: AppState,
+    on_progress: Optional[Callable[[str], None]] = None,
+) -> Path:
+    """
+    Run backtest with current UI state settings.
+
+    Dynamically patches StratMultiToggle.ENABLED_BUY_SIGNALS before run.
+
+    Args:
+        state: Current UI state with all settings
+        on_progress: Optional callback for progress updates
+
+    Returns:
+        Path to results directory (contains dashboard HTML)
+
+    Raises:
+        Exception: If backtest fails
+    """
+    from backtest import BacktestConfig, BacktestEngine, VectorizedBacktestEngine
+    from strategies.strat_multi_toggle import StratMultiToggle, SignalType
+
+    def log(msg: str):
+        if on_progress:
+            on_progress(msg)
+        print(msg)
+
+    # Step 1: Patch ENABLED_BUY_SIGNALS based on UI toggles
+    log("Configuring signals...")
+    enabled_signals = set()
+    for sig_name, enabled in state.signals.items():
+        if enabled:
+            try:
+                enabled_signals.add(SignalType[sig_name])
+            except KeyError:
+                log(f"  Warning: Unknown signal {sig_name}")
+
+    # Dynamically set the class attribute
+    StratMultiToggle.ENABLED_BUY_SIGNALS = enabled_signals
+    log(f"  Enabled: {[s.name for s in enabled_signals]}")
+
+    # Step 2: Create BacktestConfig
+    log("Creating config...")
+    config = BacktestConfig(
+        symbols=[state.symbol],
+        strategy=state.strategy,
+        months_back=state.months_back,
+        initial_capital=state.initial_capital,
+        slippage_pct=state.slippage_pct,
+        commission_per_trade=state.commission_per_trade,
+    )
+    log(f"  Symbol: {state.symbol}")
+    log(f"  Period: {config.start_date} to {config.end_date}")
+    log(f"  Capital: ${state.initial_capital:,.0f}")
+
+    # Step 3: Run appropriate engine
+    log(f"Starting {state.mode} backtest...")
+
+    if state.mode == "vectorized":
+        engine = VectorizedBacktestEngine(config)
+    else:
+        engine = BacktestEngine(config)
+
+    result = engine.run()
+
+    # Step 4: Get results path
+    results_dir = engine._results_dir
+    log(f"Results saved to: {results_dir}")
+
+    # Find dashboard HTML
+    dashboard_files = list(results_dir.glob("*dashboard*.html"))
+    if dashboard_files:
+        state.dashboard_path = dashboard_files[0]
+        log(f"Dashboard: {state.dashboard_path}")
+
+    state.result_path = results_dir
+    return results_dir
 
 
 # ============================================================
@@ -201,7 +358,7 @@ def create_run_section():
 def create_footer():
     """Create footer with info."""
     with ui.row().classes("w-full justify-center mt-8 text-sm text-gray-400"):
-        ui.label("Strategy: ha_mtf_stoch_ema | Engine: backtest/")
+        ui.label(f"Strategy: {DEFAULT_STRATEGY} | Engine: backtest/")
 
 
 # ============================================================
@@ -228,8 +385,8 @@ def main_page():
 
 if __name__ in {"__main__", "__mp_main__"}:
     ui.run(
-        title="Strategy Backtest",
-        port=8080,
+        title=UI_TITLE,
+        port=UI_PORT,
         reload=False,
         show=True,
     )
