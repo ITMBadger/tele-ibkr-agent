@@ -4,6 +4,9 @@
 # User-customizable UI config
 strategy_ui_config.py
 
+# AI/Tooling metadata
+.claude/
+
 # Ignore all following folders
 __pycache__/
 _archive/
@@ -14,10 +17,10 @@ from_other_project/
 strategies/ha_*
 strategies/strat_*
 
-# 1. Ignore the contents
+# Ignore contents
 backtest/*
 
-# include this
+# include selected contents
 !backtest/execution/
 !backtest/metrics/
 !backtest/*.py
