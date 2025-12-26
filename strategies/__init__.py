@@ -22,11 +22,8 @@ from strategies._base import BaseStrategy
 
 # Import all strategy classes
 from strategies.ema_200_long import EMA200Long
-from strategies.ema_50_aggressive import EMA50Aggressive
-from strategies.rsi_bounce import RSIOversoldBounce
-from strategies.ema_20_scalp import EMA20Scalp
-from strategies.ema_100_conservative import EMA100Conservative
 from strategies.ha_mtf_stoch import HAMTFStoch
+from strategies.ha_mtf_stoch_ema import HAMTFStochEMA
 
 
 # === STRATEGY REGISTRY ===
@@ -34,11 +31,8 @@ from strategies.ha_mtf_stoch import HAMTFStoch
 
 STRATEGY_REGISTRY: dict[str, Type[BaseStrategy]] = {
     "1": EMA200Long,
-    "2": EMA50Aggressive,
-    "3": RSIOversoldBounce,
-    "4": EMA20Scalp,
-    "5": EMA100Conservative,
-    "6": HAMTFStoch,
+    "2": HAMTFStoch,
+    "3": HAMTFStochEMA,
 }
 
 
