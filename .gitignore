@@ -9,4 +9,4 @@ data/
 from_other_project/
 
 # Ignore strategies
-strategies/ha_*.py
+strategies/ha_*
