@@ -9,5 +9,4 @@ data/
 from_other_project/
 
 # Ignore strategies
-strategies/ha_mtf_stoch.py
-strategies/strategy_core.py
+strategies/ha_*.py
