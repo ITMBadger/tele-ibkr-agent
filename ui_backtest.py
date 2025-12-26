@@ -42,13 +42,28 @@ DEFAULT_COMMISSION_PER_TRADE = 0.5
 # Backtest mode
 DEFAULT_MODE = "vectorized"  # "vectorized" or "multiprocessing"
 
-# Default signal configuration (mirrors SignalType in strat_multi_toggle.py)
-DEFAULT_SIGNALS = {
-    "STOCH_RISING": True,      # 30m Stochastic %D rising
-    "HA_TWO_GREEN": True,       # Last 2 completed 5m HA bars are green
-    "BB_TOUCH": True,           # HA low touched lower Bollinger Band
-    "ABOVE_EMA_200": False,     # Price above 200 EMA
+# Results saving
+DEFAULT_SAVE_RESULTS = False  # Save backtest results to files
+
+# Import strategy signals from external config (gitignored for customization)
+try:
+    from strategy_ui_config import SIGNALS_CONFIG, SIGNAL_DESCRIPTIONS as IMPORTED_SIGNAL_DESCRIPTIONS
+except ImportError as e:
+    # Fallback to defaults if config file doesn't exist
+    print("⚠️  strategy_ui_config.py not found - using default signal configuration")
+
+# EMA 200 signal
+EMA_200_SIGNAL = {
+    "ABOVE_EMA_200": True,  # Price above 200 EMA
 }
+
+EMA_200_DESCRIPTION = {
+    "ABOVE_EMA_200": "Price above 200 EMA (trend filter)",
+}
+
+# Merge imported config with EMA 200
+DEFAULT_SIGNALS = {**SIGNALS_CONFIG, **EMA_200_SIGNAL}
+SIGNAL_DESCRIPTIONS_FULL = {**IMPORTED_SIGNAL_DESCRIPTIONS, **EMA_200_DESCRIPTION}
 
 # UI settings
 UI_PORT = 8080
@@ -65,6 +80,9 @@ class AppState:
 
     # Backtest mode
     mode: str = DEFAULT_MODE
+
+    # Results saving
+    save_results: bool = DEFAULT_SAVE_RESULTS
 
     # Signal toggles
     signals: dict = field(default_factory=lambda: DEFAULT_SIGNALS.copy())
@@ -130,7 +148,30 @@ def run_backtest(
             on_progress(msg)
         print(msg)
 
-    # Step 1: Patch ENABLED_BUY_SIGNALS based on UI toggles
+    # Step 1: Create BacktestConfig
+    log("Creating config...")
+    config = BacktestConfig(
+        symbols=[state.symbol],
+        strategy=state.strategy,
+        months_back=state.months_back,
+        initial_capital=state.initial_capital,
+        slippage_pct=state.slippage_pct,
+        commission_per_trade=state.commission_per_trade,
+        save_results=state.save_results,
+    )
+    log(f"  Symbol: {state.symbol}")
+    log(f"  Period: {config.start_date} to {config.end_date}")
+    log(f"  Capital: ${state.initial_capital:,.0f}")
+
+    # Step 2: Create engine and load strategy class
+    log(f"Starting {state.mode} backtest...")
+
+    if state.mode == "vectorized":
+        engine = VectorizedBacktestEngine(config)
+    else:
+        engine = BacktestEngine(config)
+
+    # Step 3: Patch ENABLED_BUY_SIGNALS AFTER engine loads strategy
     log("Configuring signals...")
     enabled_signals = set()
     for sig_name, enabled in state.signals.items():
@@ -140,46 +181,32 @@ def run_backtest(
             except KeyError:
                 log(f"  Warning: Unknown signal {sig_name}")
 
-    # Dynamically set the class attribute
-    StratMultiToggle.ENABLED_BUY_SIGNALS = enabled_signals
+    # Get the strategy class that the engine loaded and patch it
+    strategy_class = engine._get_strategy_class()
+    strategy_class.ENABLED_BUY_SIGNALS = enabled_signals
     log(f"  Enabled: {[s.name for s in enabled_signals]}")
-
-    # Step 2: Create BacktestConfig
-    log("Creating config...")
-    config = BacktestConfig(
-        symbols=[state.symbol],
-        strategy=state.strategy,
-        months_back=state.months_back,
-        initial_capital=state.initial_capital,
-        slippage_pct=state.slippage_pct,
-        commission_per_trade=state.commission_per_trade,
-    )
-    log(f"  Symbol: {state.symbol}")
-    log(f"  Period: {config.start_date} to {config.end_date}")
-    log(f"  Capital: ${state.initial_capital:,.0f}")
-
-    # Step 3: Run appropriate engine
-    log(f"Starting {state.mode} backtest...")
-
-    if state.mode == "vectorized":
-        engine = VectorizedBacktestEngine(config)
-    else:
-        engine = BacktestEngine(config)
 
     result = engine.run()
 
-    # Step 4: Get results path
-    results_dir = engine._results_dir
-    log(f"Results saved to: {results_dir}")
+    # Step 4: Get results path and dashboard
+    if state.save_results:
+        results_dir = engine._results_dir
+        log(f"Results saved to: {results_dir}")
 
-    # Find dashboard HTML
-    dashboard_files = list(results_dir.glob("*dashboard*.html"))
-    if dashboard_files:
-        state.dashboard_path = dashboard_files[0]
-        log(f"Dashboard: {state.dashboard_path}")
+        # Find dashboard HTML
+        dashboard_files = list(results_dir.glob("*dashboard*.html"))
+        if dashboard_files:
+            state.dashboard_path = dashboard_files[0]
+            log(f"Dashboard: {state.dashboard_path}")
 
-    state.result_path = results_dir
-    return results_dir
+        state.result_path = results_dir
+        return results_dir
+    else:
+        # Get dashboard from result object (preview mode)
+        if hasattr(result, '_dashboard_path') and result._dashboard_path:
+            state.dashboard_path = result._dashboard_path
+            log(f"Dashboard preview: {state.dashboard_path}")
+        return None
 
 
 # ============================================================
@@ -214,6 +241,16 @@ def create_mode_selector():
         with ui.row().classes("text-sm text-gray-500 mt-2"):
             ui.label("vectorized = fast (single pass) | multiprocessing = accurate (bar-by-bar)")
 
+        # Save results toggle
+        with ui.row().classes("w-full items-center justify-between mt-4"):
+            with ui.column().classes("gap-0"):
+                ui.label("Save Results").classes("font-medium")
+                ui.label("Save trades, signals, and dashboard to files").classes("text-xs text-gray-500")
+            ui.switch(
+                value=state.save_results,
+                on_change=lambda e: setattr(state, "save_results", e.value),
+            )
+
 
 def create_signal_toggles():
     """Create signal toggle switches in two columns."""
@@ -223,15 +260,9 @@ def create_signal_toggles():
             "text-sm text-gray-500 mb-3"
         )
 
-        signal_descriptions = {
-            "STOCH_RISING": "30m Stochastic %D rising (momentum)",
-            "HA_TWO_GREEN": "Last 2 completed 5m HA bars are green",
-            "BB_TOUCH": "HA low touched lower Bollinger Band",
-            "ABOVE_EMA_200": "Price above 200 EMA (trend filter)",
-        }
-
+        # Use signal descriptions from config (imported + EMA 200)
         with ui.grid(columns=2).classes("w-full gap-4"):
-            for sig_name, description in signal_descriptions.items():
+            for sig_name, description in SIGNAL_DESCRIPTIONS_FULL.items():
                 with ui.card().classes("p-3"):
                     with ui.row().classes("w-full items-center justify-between"):
                         with ui.column().classes("gap-0"):
@@ -239,9 +270,7 @@ def create_signal_toggles():
                             ui.label(description).classes("text-xs text-gray-500")
                         ui.switch(
                             value=state.signals.get(sig_name, False),
-                            on_change=lambda e, name=sig_name: state.signals.update(
-                                {name: e.value}
-                            ),
+                            on_change=lambda e, name=sig_name: state.signals.__setitem__(name, e.value),
                         )
 
 
@@ -265,7 +294,7 @@ def create_config_panel():
                 min=1,
                 max=60,
                 step=1,
-                on_change=lambda e: setattr(state, "months_back", int(e.value)),
+                on_change=lambda e: setattr(state, "months_back", int(e.value)) if e.value is not None and e.value != '' else None,
             ).classes("w-full")
 
             # Initial capital

@@ -1,6 +1,9 @@
 # Security: Ignore environment variables
 .env
 
+# User-customizable UI config
+strategy_ui_config.py
+
 # Ignore all following folders
 __pycache__/
 _archive/

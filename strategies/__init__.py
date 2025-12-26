@@ -32,7 +32,7 @@ from strategies.strat_multi_toggle import StratMultiToggle
 STRATEGY_REGISTRY: dict[str, Type[BaseStrategy]] = {
     "1": EMA200Long,
     "2": HAMTFStochEMA,
-    "3": StratMultiToggle,
+    "999": StratMultiToggle,
 }
 
 
