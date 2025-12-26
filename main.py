@@ -27,9 +27,13 @@ import context
 from services.ibkr import IBKRService
 from services.tiingo import TiingoService, TiingoCache
 from services.agent import GeminiAgent
-from services.telegram import TelegramBot
+from services.telegram import TelegramBot, ENABLE_TESTING_BUTTONS
 from services.logger import terminal_logger, SignalLogger
 from services.time_utils import get_et_now
+
+# Conditional import for component testing
+if ENABLE_TESTING_BUTTONS:
+    from tools import component_test
 
 # Auto-shutdown time (Eastern Time, 24h format)
 AUTO_SHUTDOWN_HOUR = 16
@@ -56,44 +60,38 @@ async def strategy_loop() -> None:
                 break
 
             active = context.active_strategies.copy()
+            tasks = []
 
-            if active:
-                executed_count = 0
-                tasks = []
+            # Component test: add to parallel tasks if pending
+            if ENABLE_TESTING_BUTTONS and component_test.should_execute_pending():
+                print(f"   ⏰ [{time.strftime('%H:%M:%S')}] Dispatching: Component test...")
                 
-                for symbol, data in active.items():
-                    strategy = data.get("strategy")
-                    if strategy:
-                        if strategy.should_run():
-                            name = data.get("name", "Unknown")
-                            ts = time.strftime('%H:%M:%S')
-                            print(f"   🚀 [{ts}] Executing: {name} on {symbol}")
-                            tasks.append(strategy.execute())
-                            executed_count += 1
+                async def run_comp_test():
+                    result = await component_test.execute_pending_buy()
+                    if result:
+                        context.log(result, "trade")
+                
+                tasks.append(run_comp_test())
 
-                if tasks:
-                    await asyncio.gather(*tasks, return_exceptions=True)
-
-                if executed_count == 0:
+            # Collect strategy tasks
+            for symbol, data in active.items():
+                strategy = data.get("strategy")
+                if strategy and strategy.should_run():
+                    name = data.get("name", "Unknown")
                     ts = time.strftime('%H:%M:%S')
-                    now = time.time()
-                    sleep_time = loop_tick - (now % loop_tick)
-                    # Avoid near-zero sleeps (edge case when at boundary)
-                    if sleep_time < 0.5:
-                        sleep_time = loop_tick
-                    print(f"   ⏳ [{ts}] Tick ({len(active)} active, sleep {sleep_time:.1f}s)")
-                    await asyncio.sleep(sleep_time)
-                    continue
-            else:
-                # No strategies active at all
-                pass
+                    print(f"   🚀 [{ts}] Executing: {name} on {symbol}")
+                    tasks.append(strategy.execute())
+
+            # Run all tasks in parallel (strategies + component test)
+            if tasks:
+                await asyncio.gather(*tasks, return_exceptions=True)
 
             # Sleep until next aligned tick
             now = time.time()
             sleep_time = loop_tick - (now % loop_tick)
             if sleep_time < 0.5:
                 sleep_time = loop_tick
-            print(f"   ⏳ [{time.strftime('%H:%M:%S')}] Idle ({len(active)} active, sleep {sleep_time:.1f}s)")
+            print(f"   ⏳ [{time.strftime('%H:%M:%S')}] Tick ({len(active)} active, sleep {sleep_time:.1f}s)")
             await asyncio.sleep(sleep_time)
 
         except asyncio.CancelledError:

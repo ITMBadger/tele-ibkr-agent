@@ -28,7 +28,7 @@ ENABLE_TESTING_BUTTONS = True
 
 # Conditional import (only if enabled)
 if ENABLE_TESTING_BUTTONS:
-    from strategies import component_test
+    from tools import component_test
 
 
 class TelegramBot:
