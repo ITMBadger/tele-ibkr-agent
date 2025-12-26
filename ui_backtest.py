@@ -44,6 +44,7 @@ DEFAULT_MODE = "vectorized"  # "vectorized" or "multiprocessing"
 
 # Results saving
 DEFAULT_SAVE_RESULTS = False  # Save backtest results to files
+DEFAULT_HIDE_SIGNALS = False  # Hide signal config in dashboard (show '***')
 
 # Import strategy signals from external config (gitignored for customization)
 try:
@@ -51,8 +52,10 @@ try:
 except ImportError as e:
     # Fallback to defaults if config file doesn't exist
     print("⚠️  strategy_ui_config.py not found - using default signal configuration")
+    SIGNALS_CONFIG = {}
+    IMPORTED_SIGNAL_DESCRIPTIONS = {}
 
-# EMA 200 signal
+# EMA 200 signal (kept separate in ui_backtest.py)
 EMA_200_SIGNAL = {
     "ABOVE_EMA_200": True,  # Price above 200 EMA
 }
@@ -83,6 +86,7 @@ class AppState:
 
     # Results saving
     save_results: bool = DEFAULT_SAVE_RESULTS
+    hide_signals: bool = DEFAULT_HIDE_SIGNALS
 
     # Signal toggles
     signals: dict = field(default_factory=lambda: DEFAULT_SIGNALS.copy())
@@ -158,6 +162,7 @@ def run_backtest(
         slippage_pct=state.slippage_pct,
         commission_per_trade=state.commission_per_trade,
         save_results=state.save_results,
+        hide_signals=state.hide_signals,
     )
     log(f"  Symbol: {state.symbol}")
     log(f"  Period: {config.start_date} to {config.end_date}")
@@ -223,7 +228,7 @@ state = AppState()
 def create_header():
     """Create page header."""
     with ui.row().classes("w-full items-center justify-between mb-6"):
-        ui.label("HA + MTF Stoch + EMA Backtest").classes(
+        ui.label("Strategy Lab: Multi-Signal Explorer").classes(
             "text-2xl font-bold text-gray-800"
         )
         ui.label("Strategy Dashboard").classes("text-gray-500")
@@ -241,15 +246,28 @@ def create_mode_selector():
         with ui.row().classes("text-sm text-gray-500 mt-2"):
             ui.label("vectorized = fast (single pass) | multiprocessing = accurate (bar-by-bar)")
 
-        # Save results toggle
-        with ui.row().classes("w-full items-center justify-between mt-4"):
-            with ui.column().classes("gap-0"):
-                ui.label("Save Results").classes("font-medium")
-                ui.label("Save trades, signals, and dashboard to files").classes("text-xs text-gray-500")
-            ui.switch(
-                value=state.save_results,
-                on_change=lambda e: setattr(state, "save_results", e.value),
-            )
+        # Save results and hide signals toggles (2 columns)
+        with ui.grid(columns=2).classes("w-full gap-4 mt-4"):
+            # Left: Save Results
+            with ui.card().classes("p-3"):
+                with ui.row().classes("w-full items-center justify-between"):
+                    with ui.column().classes("gap-0"):
+                        ui.label("Save Results").classes("font-medium")
+                        ui.label("Save trades, signals, and dashboard to files").classes("text-xs text-gray-500")
+                    ui.switch(
+                        value=state.save_results,
+                        on_change=lambda e: setattr(state, "save_results", e.value),
+                    )
+            # Right: Hide Signals
+            with ui.card().classes("p-3"):
+                with ui.row().classes("w-full items-center justify-between"):
+                    with ui.column().classes("gap-0"):
+                        ui.label("Hide Signals").classes("font-medium")
+                        ui.label("Show '***' instead of signal config").classes("text-xs text-gray-500")
+                    ui.switch(
+                        value=state.hide_signals,
+                        on_change=lambda e: setattr(state, "hide_signals", e.value),
+                    )
 
 
 def create_signal_toggles():
