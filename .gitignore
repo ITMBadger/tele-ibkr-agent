@@ -7,10 +7,17 @@ strategy_ui_config.py
 # Ignore all following folders
 __pycache__/
 _archive/
-backtest/
 data/
 from_other_project/
 
 # Ignore strategies
 strategies/ha_*
 strategies/strat_*
+
+# 1. Ignore the contents
+backtest/*
+
+# include this
+!backtest/execution/
+!backtest/metrics/
+!backtest/*.py
