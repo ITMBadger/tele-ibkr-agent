@@ -30,17 +30,17 @@ from services.logger import SignalLogger
 
 
 # Type alias for order handler: (symbol, action, quantity) -> bool
-OrderHandler = Callable[[str, str, int], bool]
+OrderHandler = Callable[[str, str, float], bool]
 
 
 class BaseStrategy(ABC):
     """
     Abstract base class for all trading strategies.
-    
+
     Each strategy defines ALL its parameters as class attributes.
     The only external input is the symbol to trade.
     """
-    
+
     # === MUST OVERRIDE THESE ===
     ID: str = ""           # Unique identifier (e.g., "1", "2")
     NAME: str = ""         # Human-readable name
@@ -48,7 +48,7 @@ class BaseStrategy(ABC):
     INTERVAL: int = 60     # Check interval in seconds
 
     # === OPTIONAL: Common attributes ===
-    QUANTITY: int = 10     # Default shares per trade
+    QUANTITY: float = 10   # Default units per trade (shares/coins)
 
     # === EXIT STRATEGY (override in subclass if needed) ===
     STOP_LOSS_PCT: float = 1.0     # Default 1% stop loss
@@ -70,13 +70,13 @@ class BaseStrategy(ABC):
         Initialize strategy with symbol and data service.
 
         Args:
-            symbol: Stock symbol to trade (e.g., "QQQ")
-            tiingo: TiingoService instance for market data
+            symbol: Stock symbol to trade (e.g., "QQQ" for stocks, "BTCUSDT" for crypto)
+            tiingo: Market data service (TiingoService or BinanceDataProvider)
             time_provider: Optional callable returning current time (for backtesting)
             order_handler: Optional callable to handle orders (for backtesting)
             position_checker: Optional callable to check position (for backtesting)
         """
-        self.symbol = symbol.upper()
+        self.symbol = self._normalize_symbol(symbol)
         self.tiingo = tiingo
         self._last_check: float = 0
         self._last_strategy_log: float = 0
@@ -180,6 +180,32 @@ class BaseStrategy(ABC):
         df["signal"] = df["signal"].shift(1).fillna(0).astype(int)
         return df
     
+    @staticmethod
+    def _normalize_symbol(symbol: str) -> str:
+        """
+        Normalize symbol format based on active broker.
+
+        - IBKR: Keep as-is (e.g., "QQQ", "SPY")
+        - Hyperliquid: Simple symbol (e.g., "BTC", "ETH") - remove suffixes
+
+        This ensures consistency between:
+        - Strategy symbol (self.symbol)
+        - Position tracking (context.positions)
+        - Order placement (broker.place_order)
+        """
+        symbol = symbol.upper()
+
+        # For Hyperliquid, normalize to simple symbol (BTC, ETH, etc.)
+        if context.active_broker == "hyperliquid":
+            # Remove common suffixes and separators
+            for suffix in ["USDT", "USD", "PERP", "-PERP", "_PERP"]:
+                if symbol.endswith(suffix):
+                    symbol = symbol[:-len(suffix)]
+                    break
+            symbol = symbol.replace("/", "").replace("-", "").replace("_", "")
+
+        return symbol
+
     def should_run(self) -> bool:
         """
         Check if enough time has passed since last execution.
@@ -219,21 +245,21 @@ class BaseStrategy(ABC):
         position = account_positions.get(self.symbol)
         return position is not None and position.get("qty", 0) > 0
 
-    def get_position_qty(self) -> int:
+    def get_position_qty(self) -> float:
         """Get current position quantity (0 if none)."""
         # Use get_positions_for_account() which handles "ACCOUNT:SYMBOL" keys
         account_positions = context.get_positions_for_account()
         position = account_positions.get(self.symbol)
         return position.get("qty", 0) if position else 0
-    
-    def buy(self, quantity: int | None = None) -> bool:
+
+    def buy(self, quantity: float | None = None) -> bool:
         """Submit a buy order (low-level, no tracking)."""
         qty = quantity or self.QUANTITY
         if self._order_handler:
             return self._order_handler(self.symbol, "BUY", qty)
         return order_service.submit_order(self.symbol, "BUY", qty)
 
-    def sell(self, quantity: int | None = None) -> bool:
+    def sell(self, quantity: float | None = None) -> bool:
         """Submit a sell order (low-level, no tracking)."""
         qty = quantity or self.get_position_qty() or self.QUANTITY
         if self._order_handler:
@@ -244,7 +270,7 @@ class BaseStrategy(ABC):
 
     def open_long(
         self,
-        quantity: int | None = None,
+        quantity: float | None = None,
         entry_price: float | None = None,
         take_profit: float | None = None,
         stop_loss: float | None = None
@@ -253,7 +279,7 @@ class BaseStrategy(ABC):
         Open a LONG position with tracking.
 
         Args:
-            quantity: Number of shares (uses QUANTITY if None)
+            quantity: Number of units (uses QUANTITY if None)
             entry_price: Entry price for tracking (auto-calculates TP/SL if provided)
             take_profit: Take profit price (auto-calculated from % if None and entry_price provided)
             stop_loss: Stop loss price (auto-calculated from % if None and entry_price provided)
@@ -288,13 +314,13 @@ class BaseStrategy(ABC):
                 take_profit=tp,
                 stop_loss=sl
             )
-            self.log(f"Opened LONG {qty} shares [TP: ${tp:.2f}] [SL: ${sl:.2f}]" if tp and sl else f"Opened LONG {qty} shares")
+            self.log(f"Opened LONG {qty} units [TP: ${tp:.2f}] [SL: ${sl:.2f}]" if tp and sl else f"Opened LONG {qty} units")
 
         return success
 
     def open_short(
         self,
-        quantity: int | None = None,
+        quantity: float | None = None,
         entry_price: float | None = None,
         take_profit: float | None = None,
         stop_loss: float | None = None
@@ -303,7 +329,7 @@ class BaseStrategy(ABC):
         Open a SHORT position with tracking.
 
         Args:
-            quantity: Number of shares (uses QUANTITY if None)
+            quantity: Number of units (uses QUANTITY if None)
             entry_price: Entry price for tracking (auto-calculates TP/SL if provided)
             take_profit: Take profit price (auto-calculated from % if None and entry_price provided)
             stop_loss: Stop loss price (auto-calculated from % if None and entry_price provided)
@@ -338,18 +364,18 @@ class BaseStrategy(ABC):
                 take_profit=tp,
                 stop_loss=sl
             )
-            self.log(f"Opened SHORT {qty} shares [TP: ${tp:.2f}] [SL: ${sl:.2f}]" if tp and sl else f"Opened SHORT {qty} shares")
+            self.log(f"Opened SHORT {qty} units [TP: ${tp:.2f}] [SL: ${sl:.2f}]" if tp and sl else f"Opened SHORT {qty} units")
 
         return success
 
-    def close_position(self, quantity: int | None = None) -> bool:
+    def close_position(self, quantity: float | None = None) -> bool:
         """
         Close the current position with tracking.
 
         Automatically determines if LONG (sell) or SHORT (buy to cover).
 
         Args:
-            quantity: Number of shares to close (all if None)
+            quantity: Number of units to close (all if None)
 
         Returns:
             bool: True if order submitted successfully
@@ -362,7 +388,7 @@ class BaseStrategy(ABC):
         tracked = self.get_tracked_position()
 
         if not tracked:
-            # No tracked position, try to close IBKR position
+            # No tracked position, try to close broker position
             qty = quantity or self.get_position_qty()
             if qty > 0:
                 return self.sell(qty)
@@ -379,7 +405,7 @@ class BaseStrategy(ABC):
 
         if success:
             pos_manager.remove_position(self.symbol)
-            self.log(f"Closed {action} {qty} shares")
+            self.log(f"Closed {action} {qty} units")
 
         return success
 

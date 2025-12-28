@@ -14,10 +14,10 @@ from dataclasses import dataclass
 
 @dataclass
 class TradeSignal:
-    """Represents a trade signal from strategy to IBKR."""
+    """Represents a trade signal from strategy to broker."""
     symbol: str
     action: str  # "BUY" or "SELL"
-    quantity: int
+    quantity: float  # Supports fractional quantities for crypto
     order_type: str = "MKT"
     limit_price: float | None = None
     strategy_id: str = "manual"  # Strategy ID that generated this signal

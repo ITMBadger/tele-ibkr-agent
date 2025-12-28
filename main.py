@@ -1,10 +1,12 @@
 # main.py - Application entry point and orchestration.
 """
 This file:
-1. Starts the IBKR service in a background thread (Thread 2)
+1. Starts the broker service in a background thread (Thread 2)
 2. Creates and injects dependencies between services
 3. Runs the async event loop with Telegram bot (Thread 1)
 4. Strategy loop starts on-demand when user activates a strategy
+
+Supports multiple brokers (IBKR, Binance) via BROKER env var.
 
 Run with: python main.py
 """
@@ -24,8 +26,9 @@ CACHE_DIR = PROJECT_ROOT / "data" / "cache"
 load_dotenv(PROJECT_ROOT / ".env")
 
 import context
-from services.ibkr import IBKRService
+from services.broker_base import get_broker, list_brokers
 from services.tiingo import TiingoService, TiingoCache
+from services.market_data import TiingoDataProvider, HyperliquidDataProvider
 from services.agent import GeminiAgent
 from services.telegram import TelegramBot, ENABLE_TESTING_BUTTONS
 from services.logger import terminal_logger, SignalLogger
@@ -128,8 +131,12 @@ async def main():
     # Start terminal logging FIRST (before any print)
     log_path = terminal_logger.start()
 
+    # Get broker from env
+    broker_name = os.getenv("BROKER", "ibkr").lower()
+    context.active_broker = broker_name
+
     print("=" * 50)
-    print("Telegram-IBKR Trading Bot")
+    print(f"Telegram Trading Bot ({broker_name.upper()})")
     print("=" * 50)
     print(f"Terminal log: {log_path}")
 
@@ -139,20 +146,49 @@ async def main():
     signal.signal(signal.SIGINT, handle_shutdown)
     signal.signal(signal.SIGTERM, handle_shutdown)
 
-    # 1. Start IBKR in background thread
-    print("Starting IBKR service...")
-    ibkr = IBKRService()
-    ibkr_thread = ibkr.start_thread()
-    await asyncio.sleep(2)
+    # 1. Import and start broker in background thread
+    try:
+        # Conditional import based on selected broker
+        if broker_name == "ibkr":
+            from services.ibkr import IBKRService  # noqa: F401
+        elif broker_name == "hyperliquid":
+            from services.hyperliquid import HyperliquidService  # noqa: F401
+        else:
+            print(f"Unknown broker: {broker_name}")
+            print(f"   Available brokers: ibkr, hyperliquid")
+            return
 
-    # 2. Create async services
-    print("Starting Tiingo service...")
-    tiingo = TiingoService()
+        BrokerClass = get_broker(broker_name)
+        print(f"Starting {broker_name.upper()} service...")
+        broker = BrokerClass()
+        broker_thread = broker.start_thread()
+        await asyncio.sleep(2)
+    except ValueError as e:
+        print(f"❌ {e}")
+        print(f"   Available brokers: {', '.join(list_brokers())}")
+        return
+    except ImportError as e:
+        print(f"Import error: {e}")
+        if broker_name == "hyperliquid":
+            print("   Install Hyperliquid support: pip install hyperliquid-python-sdk")
+        return
+
+    # 2. Create market data service based on broker type
+    if broker_name == "hyperliquid":
+        print("Starting Hyperliquid market data service...")
+        # For Hyperliquid, use Hyperliquid's candles API for market data
+        data_provider = HyperliquidDataProvider()
+        tiingo = data_provider  # Alias for compatibility
+    else:
+        print("Starting Tiingo service...")
+        tiingo_service = TiingoService()
+        data_provider = TiingoDataProvider(tiingo_service)
+        tiingo = tiingo_service  # Keep original for Tiingo-specific features
 
     print("Starting Gemini agent...")
     agent = GeminiAgent(
         tiingo_service=tiingo,
-        execution_handler=ibkr.place_order
+        execution_handler=broker.place_order
     )
 
     print("Starting Telegram bot...")
@@ -173,9 +209,9 @@ async def main():
     finally:
         print("Cleaning up...")
         context.shutdown_event.set()
-        await tiingo.close()
+        await data_provider.close()
         await telegram.stop()
-        ibkr_thread.join(timeout=5)
+        broker_thread.join(timeout=5)
 
         # Clean up loggers
         SignalLogger.clear_all()

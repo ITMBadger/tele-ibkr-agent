@@ -94,6 +94,12 @@ class TiingoService:
         """Close the API session."""
         await self.api.close()
 
+    def _is_crypto_symbol(self, symbol: str) -> bool:
+        """Check if symbol is a crypto ticker (e.g., BTCUSD, ETHUSD)."""
+        symbol_upper = symbol.upper()
+        # Crypto symbols typically end with USD or USDT
+        return symbol_upper.endswith("USD") or symbol_upper.endswith("USDT")
+
     async def _fetch_with_cache(
         self,
         symbol: str,
@@ -111,7 +117,7 @@ class TiingoService:
             3. Merge both results
 
         Args:
-            symbol: Stock symbol
+            symbol: Stock symbol or crypto ticker (e.g., "QQQ" or "BTCUSD")
             days: Number of days of history
             data_type: Cache key type (e.g., "daily", "1min", "5min")
             use_cache: Whether to use cache for historical data
@@ -125,6 +131,9 @@ class TiingoService:
         start_date = today - timedelta(days=days)
 
         all_dfs: list[pd.DataFrame] = []
+
+        # Detect if this is a crypto symbol
+        is_crypto = self._is_crypto_symbol(symbol)
 
         # ===== CALL 1: Historical data (start_date to yesterday) =====
         historical_start = start_date.strftime("%Y%m%d")
@@ -144,9 +153,15 @@ class TiingoService:
                     symbol, start_date, yesterday
                 )
             else:
-                historical_df = await self.api.fetch_intraday(
-                    symbol, start_date, yesterday, interval=data_type
-                )
+                # Route to crypto or stock endpoint based on symbol
+                if is_crypto:
+                    historical_df = await self.api.fetch_crypto_intraday(
+                        symbol, start_date, yesterday, interval=data_type
+                    )
+                else:
+                    historical_df = await self.api.fetch_intraday(
+                        symbol, start_date, yesterday, interval=data_type
+                    )
 
             # Save to cache (historical data doesn't change)
             if use_cache and historical_df is not None and not historical_df.empty:
@@ -159,9 +174,15 @@ class TiingoService:
         if data_type == "daily":
             today_df = await self.api.fetch_daily(symbol, today, datetime.now())
         else:
-            today_df = await self.api.fetch_intraday(
-                symbol, today, datetime.now(), interval=data_type
-            )
+            # Route to crypto or stock endpoint based on symbol
+            if is_crypto:
+                today_df = await self.api.fetch_crypto_intraday(
+                    symbol, today, datetime.now(), interval=data_type
+                )
+            else:
+                today_df = await self.api.fetch_intraday(
+                    symbol, today, datetime.now(), interval=data_type
+                )
 
         if today_df is not None and not today_df.empty:
             all_dfs.append(today_df)
@@ -252,16 +273,17 @@ class TiingoService:
         - Historical (days ago -> yesterday): Cached permanently
         - Today: Always fresh
 
-        Data is filtered to NYSE market hours only.
+        Data is filtered to NYSE market hours for stocks only.
+        Crypto (24/7 markets) is NOT filtered.
 
         Args:
-            symbol: Stock symbol (e.g., "QQQ")
+            symbol: Stock symbol (e.g., "QQQ") or crypto ticker (e.g., "BTCUSD")
             days: Number of days of history (including today)
             interval: Bar interval ("1min", "5min", "15min", "30min", "1hour")
             use_cache: Whether to use cache (default True)
 
         Returns:
-            List of OHLC bars filtered to market hours, oldest first
+            List of OHLC bars, oldest first
         """
         df = await self._fetch_with_cache(
             symbol=symbol,
@@ -273,11 +295,12 @@ class TiingoService:
         if df.empty:
             return []
 
-        # Filter to market hours
-        df = filter_to_market_hours(df)
-
-        if df.empty:
-            return []
+        # Filter to market hours only for stocks (not crypto)
+        is_crypto = self._is_crypto_symbol(symbol)
+        if not is_crypto:
+            df = filter_to_market_hours(df)
+            if df.empty:
+                return []
 
         # Convert to list of IntradayBar TypedDicts
         bars = []

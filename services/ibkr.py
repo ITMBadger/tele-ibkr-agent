@@ -6,8 +6,7 @@ the context module's thread-safe queues.
 
 Uses reqAccountSummary() for clean multi-account balance data.
 
-Update this file to change broker behavior.
-Does NOT affect: telegram.py, agent.py, tiingo.py, strategies.py
+Implements BrokerInterface for multi-broker support.
 """
 
 import os
@@ -21,17 +20,29 @@ from ibapi.ticktype import TickTypeEnum
 
 import context
 from services import pos_manager
+from services.broker_base import BrokerInterface, BrokerCapabilities, register_broker
 
 
-class IBKRService(EWrapper, EClient):
+@register_broker("ibkr")
+class IBKRService(BrokerInterface, EWrapper, EClient):
     """
     IBKR API wrapper that handles connection and order execution.
 
     Runs in its own thread to prevent blocking the async event loop.
     Communicates via context.log_queue (outbound) and context.order_queue (inbound).
-    
+
     Uses reqAccountSummary for clean, multi-account balance data.
     """
+
+    # BrokerInterface attributes
+    NAME = "ibkr"
+    CAPABILITIES = BrokerCapabilities(
+        supports_fractional=False,      # IBKR stocks are whole shares
+        supports_short=True,
+        supports_bracket_orders=True,
+        market_hours_24_7=False,        # NYSE hours only
+        asset_type="stock"
+    )
 
     SUMMARY_TAGS = "NetLiquidation,TotalCashValue,AvailableFunds,BuyingPower"
     SUMMARY_REQ_ID = 9000
@@ -286,7 +297,7 @@ class IBKRService(EWrapper, EClient):
         self,
         symbol: str,
         action: str,
-        quantity: int,
+        quantity: float,
         order_type: str = "MKT",
         limit_price: float | None = None,
         strategy_id: str = "manual"
@@ -310,7 +321,7 @@ class IBKRService(EWrapper, EClient):
         self,
         symbol: str,
         action: str,
-        quantity: int,
+        quantity: float,
         order_type: str,
         limit_price: float | None,
         strategy_id: str
@@ -340,7 +351,7 @@ class IBKRService(EWrapper, EClient):
         self,
         symbol: str,
         action: str,
-        quantity: int,
+        quantity: float,
         order_type: str,
         limit_price: float | None,
         strategy_id: str
@@ -416,7 +427,7 @@ class IBKRService(EWrapper, EClient):
     def _create_order(
         self,
         action: str,
-        quantity: int,
+        quantity: float,
         order_type: str,
         limit_price: float | None
     ) -> Order:

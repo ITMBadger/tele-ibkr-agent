@@ -8,6 +8,7 @@ No caching logic - that's handled by cache.py.
 Endpoints:
     - Daily OHLC: https://api.tiingo.com/tiingo/daily/{symbol}/prices
     - Intraday OHLC: https://api.tiingo.com/iex/{symbol}/prices
+    - Crypto Intraday: https://api.tiingo.com/tiingo/crypto/prices?tickers={symbol}
     - Current Price: https://api.tiingo.com/iex/{symbol}
 """
 
@@ -204,6 +205,88 @@ class TiingoAPI:
 
             print(
                 f"   [Tiingo] {symbol} {interval}: {len(df)} bars "
+                f"({start_date.date()} to {end_date.date()})"
+            )
+            return df
+
+    async def fetch_crypto_intraday(
+        self,
+        ticker: str,
+        start_date: datetime,
+        end_date: datetime,
+        interval: str = "1min",
+    ) -> pd.DataFrame:
+        """
+        Fetch crypto intraday OHLC data.
+
+        Uses Tiingo crypto endpoint which has different format than IEX.
+
+        Args:
+            ticker: Crypto ticker (e.g., "btcusd", "ethusd")
+            start_date: Start date
+            end_date: End date
+            interval: Bar interval ("1min", "5min", "15min", "30min", "1hour")
+
+        Returns:
+            DataFrame with columns: date, open, high, low, close, volume
+        """
+        await self._apply_rate_limit()
+
+        session = await self._get_session()
+        url = f"{self.BASE_URL}/tiingo/crypto/prices"
+
+        # For intraday crypto, include time in ISO format
+        params = {
+            "tickers": ticker,  # Note: "tickers" not "ticker"
+            "startDate": start_date.strftime("%Y-%m-%dT%H:%M:%S"),
+            "endDate": end_date.strftime("%Y-%m-%dT%H:%M:%S"),
+            "resampleFreq": interval,
+        }
+
+        print(f"   [Debug] Crypto API request: {url}")
+        print(f"   [Debug] Params: {params}")
+
+        async with session.get(url, params=params) as response:
+            if response.status != 200:
+                text = await response.text()
+                raise Exception(f"Tiingo Crypto error {response.status}: {text}")
+
+            data = await response.json()
+
+            print(f"   [Debug] Response data length: {len(data) if data else 0}")
+            if data and len(data) > 0:
+                print(f"   [Debug] First ticker: {data[0].get('ticker', 'unknown')}")
+                if "priceData" in data[0]:
+                    print(f"   [Debug] PriceData bars: {len(data[0]['priceData'])}")
+
+            if not data:
+                return pd.DataFrame()
+
+            # Crypto endpoint returns list of tickers, each with priceData array
+            # Extract priceData for the first ticker
+            if len(data) == 0 or "priceData" not in data[0]:
+                return pd.DataFrame()
+
+            price_data = data[0]["priceData"]
+
+            if not price_data:
+                return pd.DataFrame()
+
+            # Convert to DataFrame
+            bars = []
+            for item in price_data:
+                bars.append({
+                    "date": item["date"],
+                    "open": float(item["open"]),
+                    "high": float(item["high"]),
+                    "low": float(item["low"]),
+                    "close": float(item["close"]),
+                    "volume": float(item.get("volume", 0)),  # Crypto can have decimal volume
+                })
+
+            df = pd.DataFrame(bars)
+            print(
+                f"   [Tiingo Crypto] {ticker} {interval}: {len(df)} bars "
                 f"({start_date.date()} to {end_date.date()})"
             )
             return df

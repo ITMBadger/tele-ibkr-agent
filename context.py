@@ -2,13 +2,14 @@
 """
 This module provides shared state and message queues that allow
 the async services (Telegram, Tiingo, Agent) to communicate with
-the sync IBKR service running in a separate thread.
+the broker service running in a separate thread.
 
 This module contains ONLY:
 - Queues for inter-thread communication
 - Shared state (positions, accounts, prices)
 - Simple helper functions
 
+Works with any broker (IBKR, Binance, etc.) - broker-agnostic design.
 Business logic (order submission, guardrails) is in services/order_service.py
 Data classes are in models.py
 """
@@ -81,8 +82,12 @@ conversation_history = ThreadSafeDict()
 
 # === CONNECTION STATE ===
 
-ibkr_connected = threading.Event()
+broker_connected = threading.Event()  # Set when broker is connected
+ibkr_connected = broker_connected     # Alias for backwards compatibility
 shutdown_event = threading.Event()
+
+# Active broker name (set by main.py on startup)
+active_broker: str = "ibkr"
 
 
 # === STRATEGY LOOP ===

@@ -7,7 +7,7 @@ All guardrails are loaded from .env and enforced in order_service.submit_order()
 
 To modify guardrails, update .env file:
 - ALLOWED_ACCOUNTS: Comma-separated list of allowed account IDs
-- MAX_ORDER_QUANTITY: Maximum shares per order
+- MAX_ORDER_QUANTITY: Maximum units per order (shares for stocks, coins for crypto)
 - SLIPPAGE_TOLERANCE: Maximum % difference between trigger and market price
 """
 
@@ -16,7 +16,7 @@ import os
 
 # === GUARDRAIL CONFIGURATION (loaded from .env) ===
 
-def load_guardrails() -> tuple[list[str], int, float]:
+def load_guardrails() -> tuple[list[str], float, float]:
     """
     Load guardrail settings from environment variables.
 
@@ -24,8 +24,10 @@ def load_guardrails() -> tuple[list[str], int, float]:
         (allowed_accounts, max_quantity, slippage_tolerance)
     """
     allowed_accounts_str = os.getenv("ALLOWED_ACCOUNTS", "")
-    allowed_accounts = [acc.strip().upper() for acc in allowed_accounts_str.split(",") if acc.strip()]
-    max_quantity = int(os.getenv("MAX_ORDER_QUANTITY", "100"))
+    # Support both uppercase (IBKR) and lowercase (hl-0x...) account formats
+    allowed_accounts = [acc.strip() for acc in allowed_accounts_str.split(",") if acc.strip()]
+    # Use float for quantity to support fractional crypto trading
+    max_quantity = float(os.getenv("MAX_ORDER_QUANTITY", "100"))
     slippage_tolerance = float(os.getenv("SLIPPAGE_TOLERANCE", "1.0"))  # Default 1%
     return allowed_accounts, max_quantity, slippage_tolerance
 
@@ -47,7 +49,9 @@ def validate_account(account: str | None) -> tuple[bool, str]:
         (is_valid, error_message)
     """
     if ALLOWED_ACCOUNTS and account:
-        if account.upper() not in ALLOWED_ACCOUNTS:
+        # Case-insensitive comparison to support both IBKR (uppercase) and Hyperliquid (lowercase)
+        allowed_lower = [a.lower() for a in ALLOWED_ACCOUNTS]
+        if account.lower() not in allowed_lower:
             return False, (
                 f"🚫 GUARDRAIL BLOCKED: Account '{account}' is not in the allowed accounts list.\n"
                 f"Allowed accounts: {', '.join(ALLOWED_ACCOUNTS)}"
@@ -55,12 +59,12 @@ def validate_account(account: str | None) -> tuple[bool, str]:
     return True, ""
 
 
-def validate_quantity(quantity: int) -> tuple[bool, str]:
+def validate_quantity(quantity: float) -> tuple[bool, str]:
     """
     Validate if quantity is within allowed limit.
 
     Args:
-        quantity: Number of shares
+        quantity: Number of units (shares for stocks, coins for crypto)
 
     Returns:
         (is_valid, error_message)
@@ -68,18 +72,18 @@ def validate_quantity(quantity: int) -> tuple[bool, str]:
     if quantity > MAX_ORDER_QUANTITY:
         return False, (
             f"🚫 GUARDRAIL BLOCKED: Order quantity {quantity} exceeds maximum allowed ({MAX_ORDER_QUANTITY}).\n"
-            f"Max allowed per trade: {MAX_ORDER_QUANTITY} shares"
+            f"Max allowed per trade: {MAX_ORDER_QUANTITY} units"
         )
     return True, ""
 
 
-def validate_order_guardrails(account: str | None, quantity: int) -> tuple[bool, str]:
+def validate_order_guardrails(account: str | None, quantity: float) -> tuple[bool, str]:
     """
     Validate order against all hardcoded guardrails.
 
     Args:
         account: Account ID
-        quantity: Number of shares
+        quantity: Number of units (shares for stocks, coins for crypto)
 
     Returns:
         (is_valid, error_message) - if is_valid is False, error_message explains why
