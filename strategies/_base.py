@@ -545,7 +545,7 @@ class BaseStrategy(ABC):
         if current_price is None:
             # Try to fetch from tiingo
             try:
-                ohlc = await self.tiingo.get_intraday_ohlc(self.symbol, minutes=5)
+                ohlc = await self.tiingo.get_ohlc(self.symbol, days=1, interval="5min")
                 if ohlc:
                     current_price = ohlc[-1].get("close")
             except Exception:

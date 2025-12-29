@@ -28,7 +28,7 @@ load_dotenv(PROJECT_ROOT / ".env")
 import context
 from services.broker_base import get_broker, list_brokers
 from services.tiingo import TiingoService, TiingoCache
-from services.market_data import TiingoDataProvider, HyperliquidDataProvider
+from services.market_data import TiingoDataProvider
 from services.agent import GeminiAgent
 from services.telegram import TelegramBot, ENABLE_TESTING_BUTTONS
 from services.logger import terminal_logger, SignalLogger
@@ -173,21 +173,19 @@ async def main():
             print("   Install Hyperliquid support: pip install hyperliquid-python-sdk")
         return
 
-    # 2. Create market data service based on broker type
+    # 2. Create market data service (always Tiingo for consistent indicators/signals)
+    # Both IBKR and Hyperliquid use Tiingo for OHLC data
+    # Only difference: Hyperliquid needs crypto symbol translation (BTC → BTCUSD)
+    print("Starting Tiingo service...")
+    tiingo_service = TiingoService()
     if broker_name == "hyperliquid":
-        print("Starting Hyperliquid market data service...")
-        # For Hyperliquid, use Hyperliquid's candles API for market data
-        data_provider = HyperliquidDataProvider()
-        tiingo = data_provider  # Alias for compatibility
+        data_provider = TiingoDataProvider(tiingo_service, crypto_mode=True)
     else:
-        print("Starting Tiingo service...")
-        tiingo_service = TiingoService()
         data_provider = TiingoDataProvider(tiingo_service)
-        tiingo = tiingo_service  # Keep original for Tiingo-specific features
 
     print("Starting Gemini agent...")
     agent = GeminiAgent(
-        tiingo_service=tiingo,
+        tiingo_service=data_provider,  # Pass data_provider (has symbol translation)
         execution_handler=broker.place_order
     )
 

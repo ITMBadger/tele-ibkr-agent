@@ -12,13 +12,20 @@ Usage:
     data = HyperliquidDataProvider()
 
     # Same interface for both
-    bars = await data.get_daily_ohlc("SYMBOL", days=250)
-    bars = await data.get_intraday_ohlc("SYMBOL", days=5, interval="5min")
+    bars = await data.get_ohlc("SYMBOL", days=5, interval="5min")
     price = await data.get_current_price("SYMBOL")
 """
 
 from abc import ABC, abstractmethod
 from typing import TypedDict
+
+
+# Crypto symbols that need USD suffix for Tiingo API
+# Shared across TiingoDataProvider and component_test
+CRYPTO_SYMBOLS = {
+    "BTC", "ETH", "SOL", "AVAX", "LINK", "DOGE", "ADA", "DOT",
+    "MATIC", "UNI", "AAVE", "ATOM", "XRP", "LTC", "BCH", "XLM",
+}
 
 
 class OHLCBar(TypedDict):
@@ -35,24 +42,14 @@ class MarketDataProvider(ABC):
     """Abstract base class for market data providers."""
 
     @abstractmethod
-    async def get_daily_ohlc(
-        self,
-        symbol: str,
-        days: int = 250,
-        use_cache: bool = True,
-    ) -> list[OHLCBar]:
-        """Fetch daily OHLC data."""
-        pass
-
-    @abstractmethod
-    async def get_intraday_ohlc(
+    async def get_ohlc(
         self,
         symbol: str,
         days: int = 5,
         interval: str = "5min",
         use_cache: bool = True,
     ) -> list[OHLCBar]:
-        """Fetch intraday OHLC data."""
+        """Fetch OHLC data."""
         pass
 
     @abstractmethod
@@ -66,34 +63,46 @@ class MarketDataProvider(ABC):
 
 
 class TiingoDataProvider(MarketDataProvider):
-    """Market data provider using Tiingo (for stocks)."""
+    """Market data provider using Tiingo (for stocks and crypto)."""
 
-    def __init__(self, tiingo_service):
+    def __init__(self, tiingo_service, crypto_mode: bool = False):
         """
         Args:
             tiingo_service: TiingoService instance
+            crypto_mode: If True, auto-translate symbols (BTC → BTCUSD)
         """
         self.tiingo = tiingo_service
+        self.crypto_mode = crypto_mode
 
-    async def get_daily_ohlc(
-        self,
-        symbol: str,
-        days: int = 250,
-        use_cache: bool = True,
-    ) -> list[OHLCBar]:
-        return await self.tiingo.get_daily_ohlc(symbol, days, use_cache)
+    def _translate_symbol(self, symbol: str) -> str:
+        """Translate symbol for Tiingo API (BTC → BTCUSD in crypto mode)."""
+        if not self.crypto_mode:
+            return symbol
 
-    async def get_intraday_ohlc(
+        symbol_upper = symbol.upper()
+        # Already has USD suffix - return as-is
+        if symbol_upper.endswith("USD") or symbol_upper.endswith("USDT"):
+            return symbol
+
+        # Known crypto symbol - add USD suffix
+        if symbol_upper in CRYPTO_SYMBOLS:
+            return f"{symbol_upper}USD"
+
+        return symbol
+
+    async def get_ohlc(
         self,
         symbol: str,
         days: int = 5,
         interval: str = "5min",
         use_cache: bool = True,
     ) -> list[OHLCBar]:
-        return await self.tiingo.get_intraday_ohlc(symbol, days, interval, use_cache)
+        tiingo_symbol = self._translate_symbol(symbol)
+        return await self.tiingo.get_ohlc(tiingo_symbol, days, interval, use_cache)
 
     async def get_current_price(self, symbol: str) -> float:
-        return await self.tiingo.get_current_price(symbol)
+        tiingo_symbol = self._translate_symbol(symbol)
+        return await self.tiingo.get_current_price(tiingo_symbol)
 
     async def close(self) -> None:
         await self.tiingo.close()
@@ -148,23 +157,7 @@ class HyperliquidDataProvider(MarketDataProvider):
         symbol = symbol.replace("/", "").replace("-", "").replace("_", "")
         return symbol
 
-    async def get_daily_ohlc(
-        self,
-        symbol: str,
-        days: int = 250,
-        use_cache: bool = True,
-    ) -> list[OHLCBar]:
-        """
-        Fetch daily OHLC from Hyperliquid.
-
-        Args:
-            symbol: Trading symbol (e.g., "BTC", "ETH")
-            days: Number of days of history
-            use_cache: Ignored for now
-        """
-        return await self._fetch_candles(symbol, "1d", days)
-
-    async def get_intraday_ohlc(
+    async def get_ohlc(
         self,
         symbol: str,
         days: int = 5,
@@ -172,7 +165,7 @@ class HyperliquidDataProvider(MarketDataProvider):
         use_cache: bool = True,
     ) -> list[OHLCBar]:
         """
-        Fetch intraday OHLC from Hyperliquid.
+        Fetch OHLC from Hyperliquid.
 
         Args:
             symbol: Trading symbol (e.g., "BTC", "ETH")

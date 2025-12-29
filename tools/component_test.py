@@ -2,13 +2,17 @@
 Component Testing Module
 
 Manual testing tool for validating trading components via Telegram.
-Uses strategy ID 888 and fetches 1min OHLC data for guardrail slippage checks.
+Uses strategy ID 888 and fetches 1min OHLC data for guardrail checks.
+
+Features:
+- TEST BUY: Places real order at minute boundary (like real strategies)
+- TEST GUARDRAILS: Tests all 3 guardrails without placing order
 
 Behavior (same as other strategies):
 - BUY triggers at xx:00s (beginning of new minute) like real strategies
-- Fetches 1min OHLC data from market data provider (~2s delay)
+- Fetches last 1 hour of 1min OHLC data from market data provider
 - Uses global shift: trigger price = completed bar's close (iloc[-2])
-- Activates all guardrails (slippage, position limits, etc.)
+- Activates all guardrails (account, quantity, slippage)
 - Logs OHLC trigger to CSV in data/logs/
 - Creates position.json tracking file
 
@@ -20,6 +24,7 @@ import time
 
 import context
 from services import order_service, pos_manager
+from services.market_data import CRYPTO_SYMBOLS
 from services.time_utils import format_iso_to_et, get_et_timestamp
 from services.logger import SignalLogger
 
@@ -72,31 +77,86 @@ def get_broker_name() -> str:
     return get_config()["broker_name"]
 
 
+# === TIINGO DATA HELPERS ===
+# Shared functions for fetching OHLC data from Tiingo (used by both modes)
+# CRYPTO_SYMBOLS is imported from services.market_data
+
+
 def translate_symbol_for_tiingo(symbol: str) -> str:
     """
-    Translate crypto symbols to Tiingo format.
+    Translate symbol to Tiingo format.
 
-    Hyperliquid uses: BTC, ETH, SOL, etc.
-    Tiingo needs: BTCUSD, ETHUSD, SOLUSD, etc.
-
-    For stocks (IBKR), return as-is.
+    For Hyperliquid crypto: BTC → BTCUSD
+    For IBKR stocks: QQQ → QQQ (unchanged)
     """
-    if context.active_broker == "hyperliquid":
-        # Crypto symbols need USD suffix for Tiingo
-        crypto_map = {
-            "BTC": "BTCUSD",
-            "ETH": "ETHUSD",
-            "SOL": "SOLUSD",
-            "AVAX": "AVAXUSD",
-            "MATIC": "MATICUSD",
-            "LINK": "LINKUSD",
-            "UNI": "UNIUSD",
-            "DOGE": "DOGEUSD",
-        }
-        return crypto_map.get(symbol.upper(), f"{symbol.upper()}USD")
-    else:
-        # Stock symbols stay as-is
+    if context.active_broker != "hyperliquid":
         return symbol
+
+    symbol_upper = symbol.upper()
+    # Already has USD suffix
+    if symbol_upper.endswith("USD") or symbol_upper.endswith("USDT"):
+        return symbol
+
+    # Known crypto - add USD suffix
+    if symbol_upper in CRYPTO_SYMBOLS:
+        return f"{symbol_upper}USD"
+
+    return symbol
+
+
+async def fetch_ohlc_1hour(symbol: str) -> list[dict]:
+    """
+    Fetch last 1 hour of 1min OHLC data from Tiingo.
+
+    Unified function for both IBKR and Hyperliquid modes.
+    Handles symbol translation and crypto/stock detection automatically.
+
+    Returns:
+        List of OHLC bar dicts, or empty list on error
+    """
+    from datetime import datetime, timedelta
+    from services.tiingo.api import TiingoAPI
+
+    tiingo_symbol = translate_symbol_for_tiingo(symbol)
+    is_crypto = tiingo_symbol.upper().endswith("USD") or tiingo_symbol.upper().endswith("USDT")
+
+    tiingo_api = TiingoAPI()
+    try:
+        end_time = datetime.utcnow()
+        start_time = end_time - timedelta(hours=1)
+
+        if is_crypto:
+            df = await tiingo_api.fetch_crypto_intraday(
+                ticker=tiingo_symbol,
+                start_date=start_time,
+                end_date=end_time,
+                interval="1min"
+            )
+        else:
+            df = await tiingo_api.fetch_intraday(
+                symbol=tiingo_symbol,
+                start_date=start_time,
+                end_date=end_time,
+                interval="1min"
+            )
+
+        if df is None or df.empty:
+            return []
+
+        # Convert DataFrame to list of dicts
+        ohlc_data = []
+        for _, row in df.iterrows():
+            ohlc_data.append({
+                'date': str(row['date']),
+                'open': float(row['open']),
+                'high': float(row['high']),
+                'low': float(row['low']),
+                'close': float(row['close']),
+                'volume': int(row.get('volume', 0))
+            })
+        return ohlc_data
+    finally:
+        await tiingo_api.close()
 
 
 # === PENDING BUY STATE ===
@@ -122,7 +182,7 @@ def get_testing_keyboard() -> dict:
                 {"text": f"📈 TEST BUY {symbol}", "callback_data": "test_buy"}
             ],
             [
-                {"text": "📊 Test Slippage", "callback_data": "test_slippage"}
+                {"text": "📊 Test Guardrails", "callback_data": "test_guardrails"}
             ],
             [
                 {"text": "🚫 Cancel Pending", "callback_data": "test_cancel"},
@@ -156,9 +216,9 @@ def handle_test_command() -> tuple[str, dict | None]:
         f"Symbol: {symbol}\n"
         f"Quantity: {quantity} {unit}\n\n"
         f"Current Account: {context.current_account or 'Not set'}\n\n"
-        "⚠️ This will place a REAL order!\n"
-        "• Fetches 1min OHLC for slippage check\n"
-        "• Activates all guardrails\n"
+        "⚠️ TEST BUY will place a REAL order!\n"
+        "• Fetches last 1hr of 1min OHLC\n"
+        "• Tests all guardrails (account, qty, slippage)\n"
         "• Logs via standard buy method\n\n"
         "Select action:"
     )
@@ -179,8 +239,8 @@ async def handle_callback(callback_data: str) -> str:
     if callback_data == "test_buy":
         return await _schedule_test_buy()
 
-    elif callback_data == "test_slippage":
-        return await _test_slippage()
+    elif callback_data == "test_guardrails":
+        return await _test_guardrails()
 
     elif callback_data == "test_cancel":
         return cancel_pending_buy()
@@ -252,184 +312,180 @@ async def _schedule_test_buy() -> str:
     )
 
 
-async def _test_slippage() -> str:
+async def _test_guardrails() -> str:
     """
-    Test slippage check without placing an order.
+    Test all 3 guardrails without placing an order.
 
-    Fetches 1min OHLC from Tiingo, gets current market price from broker,
-    and compares them like the guardrail does.
+    Tests:
+    1. Account guardrail - Is current account in allowed list?
+    2. Quantity guardrail - Is test quantity within limit?
+    3. Slippage guardrail - Is price difference within tolerance?
 
-    Note: Only applicable for IBKR (stocks). Hyperliquid uses its own data.
+    Mimics strategy flow: fetches 1hr of 1min OHLC, uses [-2] as trigger price,
+    compares with live market price.
 
     Prints result to both terminal and returns message for Telegram.
     """
-    from services.guardrails import SLIPPAGE_TOLERANCE
+    from services.guardrails import (
+        SLIPPAGE_TOLERANCE,
+        get_allowed_accounts,
+        get_max_order_quantity,
+        validate_account,
+        validate_quantity,
+    )
 
     broker = get_broker_name()
     symbol = get_test_symbol()
+    quantity = get_test_quantity()
+    allowed_accounts = get_allowed_accounts()
+    max_qty = get_max_order_quantity()
 
     if not context.broker_connected.is_set():
-        msg = f"❌ {broker} not connected. Cannot test slippage."
+        msg = f"❌ {broker} not connected. Cannot test guardrails."
         print(f"\n{msg}")
         return msg
 
-    # === STEP 1: Fetch 1min OHLC from Tiingo (strategy data source) ===
     print(f"\n{'='*60}")
-    print(f"📊 SLIPPAGE TEST for {symbol}")
+    print(f"📊 GUARDRAILS TEST for {symbol}")
     print(f"{'='*60}")
 
-    # Always use Tiingo for trigger price (this is what strategies use)
-    from services.tiingo import TiingoService
-    tiingo = TiingoService()
+    results = []  # Track pass/fail for each guardrail
+    telegram_lines = [f"📊 **Guardrails Test Result**\n", f"**Symbol:** {symbol}\n"]
 
-    # Translate symbol to Tiingo format (e.g., BTC → BTCUSD for crypto)
+    # === GUARDRAIL 1: Account ===
+    print(f"\n   [1/3] ACCOUNT GUARDRAIL")
+    account_ok, account_error = validate_account(context.current_account)
+    if account_ok:
+        print(f"   ✅ PASS - Account '{context.current_account}' is allowed")
+        print(f"      Allowed: {', '.join(allowed_accounts)}")
+        results.append(True)
+        telegram_lines.append(f"**1. Account:** ✅ PASS\n   `{context.current_account}` in allowed list")
+    else:
+        print(f"   ❌ FAIL - {account_error}")
+        results.append(False)
+        telegram_lines.append(f"**1. Account:** ❌ FAIL\n   `{context.current_account}` not allowed")
+
+    # === GUARDRAIL 2: Quantity ===
+    print(f"\n   [2/3] QUANTITY GUARDRAIL")
+    quantity_ok, quantity_error = validate_quantity(quantity)
+    if quantity_ok:
+        print(f"   ✅ PASS - Quantity {quantity} <= max {max_qty}")
+        results.append(True)
+        telegram_lines.append(f"\n**2. Quantity:** ✅ PASS\n   {quantity} <= {max_qty}")
+    else:
+        print(f"   ❌ FAIL - {quantity_error}")
+        results.append(False)
+        telegram_lines.append(f"\n**2. Quantity:** ❌ FAIL\n   {quantity} > {max_qty}")
+
+    # === GUARDRAIL 3: Slippage ===
+    print(f"\n   [3/3] SLIPPAGE GUARDRAIL")
+
+    # Log symbol translation for debugging
     tiingo_symbol = translate_symbol_for_tiingo(symbol)
+    if tiingo_symbol != symbol:
+        print(f"   Translating symbol: {symbol} → {tiingo_symbol}")
+
+    print(f"   Fetching 1min OHLC from Tiingo (last 1 hour)...")
 
     try:
-        if tiingo_symbol != symbol:
-            print(f"   Fetching 1min OHLC from Tiingo (last 24 hours)...")
-            print(f"   Translating: {symbol} → {tiingo_symbol}")
-        else:
-            print(f"   Fetching 1min OHLC from Tiingo (last 24 hours)...")
-
-        # Fetch just last 24 hours using direct API for precise time range
-        from services.tiingo.api import TiingoAPI
-        from datetime import datetime, timedelta
-
-        tiingo_api = TiingoAPI()
-        end_time = datetime.utcnow()  # Use UTC time
-        start_time = end_time - timedelta(hours=24)  # Last 24 hours for better data availability
-
-        # Detect if crypto or stock
-        is_crypto = tiingo_symbol.upper().endswith("USD") or tiingo_symbol.upper().endswith("USDT")
-
-        if is_crypto:
-            df = await tiingo_api.fetch_crypto_intraday(
-                ticker=tiingo_symbol,
-                start_date=start_time,
-                end_date=end_time,
-                interval="1min"
-            )
-        else:
-            df = await tiingo_api.fetch_intraday(
-                symbol=tiingo_symbol,
-                start_date=start_time,
-                end_date=end_time,
-                interval="1min"
-            )
-
-        await tiingo_api.close()
-
-        # Convert DataFrame to list of dicts (matching get_intraday_ohlc format)
-        if df is None or df.empty:
-            ohlc_data = []
-        else:
-            ohlc_data = []
-            for _, row in df.iterrows():
-                ohlc_data.append({
-                    'date': str(row['date']),
-                    'open': float(row['open']),
-                    'high': float(row['high']),
-                    'low': float(row['low']),
-                    'close': float(row['close']),
-                    'volume': int(row.get('volume', 0))
-                })
+        ohlc_data = await fetch_ohlc_1hour(symbol)
 
         if not ohlc_data or len(ohlc_data) < 2:
-            msg = (
-                f"❌ Slippage Test Failed\n"
-                f"   Insufficient OHLC data from Tiingo\n"
-                f"   Bars received: {len(ohlc_data) if ohlc_data else 0}"
-            )
-            print(f"   {msg}")
-            print(f"{'='*60}\n")
-            return msg
+            print(f"   ❌ FAIL - Insufficient OHLC data from Tiingo")
+            print(f"      Bars received: {len(ohlc_data) if ohlc_data else 0}")
+            results.append(False)
+            telegram_lines.append(f"\n**3. Slippage:** ❌ FAIL\n   No OHLC data from Tiingo")
+        else:
+            # Trigger price = iloc[-2] (last completed bar's close)
+            trigger_bar = ohlc_data[-2]
+            trigger_price = trigger_bar['close']
+            trigger_time = format_iso_to_et(trigger_bar['date'])
 
-        # Trigger price = iloc[-2] (last completed bar's close)
-        trigger_bar = ohlc_data[-2]
-        trigger_price = trigger_bar['close']
-        trigger_time = format_iso_to_et(trigger_bar['date'])
+            print(f"   ✓ Trigger price: ${trigger_price:.4f}")
+            print(f"     From bar: {trigger_time} (completed)")
+            print(f"     Total bars: {len(ohlc_data)}")
 
-        print(f"   ✓ Tiingo trigger price: ${trigger_price:.4f}")
-        print(f"     From bar: {trigger_time} (completed)")
-        print(f"     Total bars: {len(ohlc_data)}")
+            # Get current market price from broker
+            print(f"   Fetching current price from {broker}...")
+            context.price_request_queue.put(symbol)
+
+            # Wait for response with polling
+            import time as time_module
+            import asyncio
+            start = time_module.time()
+            timeout = 5.0
+            market_price = None
+
+            while (time_module.time() - start) < timeout:
+                market_price = context.market_prices.get(symbol)
+                if market_price is not None:
+                    break
+                await asyncio.sleep(0.1)
+
+            if market_price is None:
+                print(f"   ⚠️ Could not get {broker} price (timeout)")
+                print(f"   Slippage check SKIPPED")
+                results.append(True)  # Don't fail if we can't get market price
+                telegram_lines.append(f"\n**3. Slippage:** ⚠️ SKIPPED\n   Could not fetch {broker} price")
+            else:
+                print(f"   ✓ {broker} market price: ${market_price:.4f}")
+
+                # Calculate slippage
+                slippage_pct = abs(market_price - trigger_price) / trigger_price * 100
+                price_diff = market_price - trigger_price
+
+                print(f"   Analysis:")
+                print(f"      Tiingo (trigger): ${trigger_price:.4f}")
+                print(f"      {broker} (market): ${market_price:.4f}")
+                print(f"      Difference:        ${price_diff:+.4f}")
+                print(f"      Slippage:          {slippage_pct:.3f}%")
+                print(f"      Tolerance:         {SLIPPAGE_TOLERANCE}%")
+
+                if slippage_pct <= SLIPPAGE_TOLERANCE:
+                    print(f"   ✅ PASS - Slippage within tolerance")
+                    results.append(True)
+                    telegram_lines.append(
+                        f"\n**3. Slippage:** ✅ PASS\n"
+                        f"   Tiingo: ${trigger_price:.4f}\n"
+                        f"   {broker}: ${market_price:.4f}\n"
+                        f"   Slippage: {slippage_pct:.3f}% <= {SLIPPAGE_TOLERANCE}%"
+                    )
+                else:
+                    print(f"   ❌ FAIL - Slippage exceeds tolerance!")
+                    results.append(False)
+                    telegram_lines.append(
+                        f"\n**3. Slippage:** ❌ FAIL\n"
+                        f"   Tiingo: ${trigger_price:.4f}\n"
+                        f"   {broker}: ${market_price:.4f}\n"
+                        f"   Slippage: {slippage_pct:.3f}% > {SLIPPAGE_TOLERANCE}%"
+                    )
 
     except Exception as e:
-        msg = f"❌ Failed to fetch Tiingo data: {e}"
-        print(f"   {msg}")
-        print(f"{'='*60}\n")
-        return msg
+        print(f"   ❌ FAIL - Error fetching data: {e}")
+        results.append(False)
+        telegram_lines.append(f"\n**3. Slippage:** ❌ FAIL\n   Error: {e}")
 
-    # === STEP 2: Get current market price from broker ===
-    print(f"\n   Fetching current price from {broker}...")
+    # === SUMMARY ===
+    passed = sum(results)
+    total = len(results)
+    all_passed = all(results)
 
-    # Request price via queue
-    context.price_request_queue.put(symbol)
-
-    # Wait for response with polling
-    import time as time_module
-    start = time_module.time()
-    timeout = 5.0
-    market_price = None
-
-    import asyncio
-    while (time_module.time() - start) < timeout:
-        market_price = context.market_prices.get(symbol)
-        if market_price is not None:
-            break
-        await asyncio.sleep(0.1)
-
-    if market_price is None:
-        msg = (
-            f"⚠️ Slippage Test - No Market Price\n"
-            f"   Tiingo trigger: ${trigger_price:.4f} @ {trigger_time}\n"
-            f"   {broker} price: Could not fetch (timeout)\n\n"
-            f"   Slippage check would be SKIPPED"
-        )
-        print(f"   ⚠️ Could not get {broker} price (timeout)")
-        print(f"{'='*60}\n")
-        return msg
-
-    print(f"   ✓ {broker} market price: ${market_price:.4f}")
-
-    # === STEP 3: Calculate slippage ===
-    slippage_pct = abs(market_price - trigger_price) / trigger_price * 100
-    price_diff = market_price - trigger_price
-
-    print(f"\n   📈 SLIPPAGE ANALYSIS:")
-    print(f"      Tiingo (trigger):  ${trigger_price:.4f}")
-    print(f"      {broker} (market): ${market_price:.4f}")
-    print(f"      Difference:        ${price_diff:+.4f}")
-    print(f"      Slippage:          {slippage_pct:.3f}%")
-    print(f"      Tolerance:         {SLIPPAGE_TOLERANCE}%")
-
-    # === STEP 4: Determine result ===
-    if slippage_pct <= SLIPPAGE_TOLERANCE:
-        status = "✅ PASS"
-        result_emoji = "✅"
-        would_block = "NO - Order would proceed"
-        print(f"\n   {status} - Slippage within tolerance")
+    print(f"\n{'='*60}")
+    if all_passed:
+        print(f"✅ ALL GUARDRAILS PASSED ({passed}/{total})")
+        print(f"   Order would PROCEED")
+        summary_emoji = "✅"
+        summary_text = f"ALL PASSED ({passed}/{total}) - Order would proceed"
     else:
-        status = "❌ FAIL"
-        result_emoji = "🚫"
-        would_block = "YES - Order would be BLOCKED"
-        print(f"\n   {status} - Slippage exceeds tolerance!")
-
-    print(f"   Would block order: {would_block}")
+        print(f"❌ GUARDRAILS FAILED ({passed}/{total} passed)")
+        print(f"   Order would be BLOCKED")
+        summary_emoji = "🚫"
+        summary_text = f"FAILED ({passed}/{total} passed) - Order would be blocked"
     print(f"{'='*60}\n")
 
     # Build Telegram message
-    msg = (
-        f"{result_emoji} **Slippage Test Result**\n\n"
-        f"**Symbol:** {symbol}\n"
-        f"**Tiingo (trigger):** ${trigger_price:.4f}\n"
-        f"  └─ Bar time: {trigger_time}\n"
-        f"**{broker} (market):** ${market_price:.4f}\n\n"
-        f"**Slippage:** {slippage_pct:.3f}%\n"
-        f"**Tolerance:** {SLIPPAGE_TOLERANCE}%\n\n"
-        f"**Result:** {status}\n"
-        f"**Would block order:** {would_block}"
-    )
+    telegram_lines.append(f"\n\n{summary_emoji} **{summary_text}**")
+    msg = "\n".join(telegram_lines)
 
     return msg
 
@@ -506,53 +562,29 @@ async def execute_pending_buy() -> str | None:
     if has_position():
         return f"🚫 Scheduled BUY cancelled: already have position in {symbol}."
 
-    # Create appropriate market data provider based on broker
-    if context.active_broker == "hyperliquid":
-        from services.market_data import HyperliquidDataProvider
-        data_provider = HyperliquidDataProvider()
-    else:
-        from services.tiingo import TiingoService
-        data_provider = TiingoService()
+    # Fetch last 1 hour of 1min OHLC data from Tiingo (unified for both IBKR and Hyperliquid)
+    ohlc_data = await fetch_ohlc_1hour(symbol)
 
-    try:
-        ohlc_data = await data_provider.get_intraday_ohlc(
-            symbol=symbol,
-            days=1,
-            interval="1min",
-            use_cache=False  # Always fresh
-        )
-
-        if not ohlc_data or len(ohlc_data) < 2:
-            await data_provider.close()
-            return (
-                f"🚫 Scheduled BUY BLOCKED\n"
-                f"   Insufficient OHLC data (need >= 2 bars)\n"
-                f"   Bars received: {len(ohlc_data) if ohlc_data else 0}"
-            )
-
-        # === GLOBAL SHIFT LOGIC (same as other strategies) ===
-        # Signal bar = iloc[-1] (current incomplete bar)
-        # Trigger price = iloc[-2] (last completed bar's close)
-        trigger_bar = ohlc_data[-2]
-        trigger_price = trigger_bar['close']
-        trigger_time = format_iso_to_et(trigger_bar['date'])
-
-        bar_count = len(ohlc_data)
-        data_info = f"\n📊 Fetched {bar_count} 1min bars"
-        data_info += f"\n   Trigger: ${trigger_price:.4f} @ {trigger_time} (completed bar)"
-
-        # Store for slippage guardrail check
-        context.latest_prices.set(symbol, trigger_price)
-
-    except Exception as e:
-        await data_provider.close()
+    if not ohlc_data or len(ohlc_data) < 2:
         return (
             f"🚫 Scheduled BUY BLOCKED\n"
-            f"   Failed to fetch OHLC data: {e}\n"
-            f"   Cannot verify slippage guardrail"
+            f"   Insufficient OHLC data (need >= 2 bars)\n"
+            f"   Bars received: {len(ohlc_data) if ohlc_data else 0}"
         )
-    finally:
-        await data_provider.close()
+
+    # === GLOBAL SHIFT LOGIC (same as other strategies) ===
+    # Signal bar = iloc[-1] (current incomplete bar)
+    # Trigger price = iloc[-2] (last completed bar's close)
+    trigger_bar = ohlc_data[-2]
+    trigger_price = trigger_bar['close']
+    trigger_time = format_iso_to_et(trigger_bar['date'])
+
+    bar_count = len(ohlc_data)
+    data_info = f"\n📊 Fetched {bar_count} 1min bars (last 1 hour)"
+    data_info += f"\n   Trigger: ${trigger_price:.4f} @ {trigger_time} (completed bar)"
+
+    # Store for slippage guardrail check
+    context.latest_prices.set(symbol, trigger_price)
 
     # Submit order through guardrails (same as all strategies)
     success = order_service.submit_order(

@@ -43,8 +43,9 @@ class PoeAgent:
     @staticmethod
     def _build_system_prompt() -> str:
         """Build system prompt with dynamic guardrail information."""
-        allowed_accounts = ", ".join(guardrails.ALLOWED_ACCOUNTS) if guardrails.ALLOWED_ACCOUNTS else "ALL"
-        max_quantity = guardrails.MAX_ORDER_QUANTITY
+        allowed_list = guardrails.get_allowed_accounts()
+        allowed_accounts = ", ".join(allowed_list) if allowed_list else "ALL"
+        max_quantity = guardrails.get_max_order_quantity()
 
         return f"""You are a helpful trading assistant. You help users:
 - Check market prices and positions
@@ -116,11 +117,12 @@ Be concise and clear in your responses. Do calculations yourself when data is al
         self.system_prompt = self._build_system_prompt()
 
         # Log configuration on startup
+        allowed_list = guardrails.get_allowed_accounts()
         print(f"\n{'='*60}")
         print(f"AI Agent: Poe API ({self.model_name})")
         print(f"Guardrails Active:")
-        print(f"   Allowed Accounts: {', '.join(guardrails.ALLOWED_ACCOUNTS) if guardrails.ALLOWED_ACCOUNTS else 'ALL'}")
-        print(f"   Max Order Quantity: {guardrails.MAX_ORDER_QUANTITY} shares/trade")
+        print(f"   Allowed Accounts: {', '.join(allowed_list) if allowed_list else 'ALL'}")
+        print(f"   Max Order Quantity: {guardrails.get_max_order_quantity()}")
         print(f"   Max Slippage Tolerance: {guardrails.SLIPPAGE_TOLERANCE}%")
         print(f"{'='*60}\n")
 

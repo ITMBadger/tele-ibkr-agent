@@ -4,7 +4,7 @@ Strategy 1: 200 EMA Long
 Buy when price crosses above 200 EMA, sell when crosses below.
 A slower, conservative trend-following strategy.
 
-ALL PARAMETERS ARE FIXED - no external configuration.
+Uses 5min bars by default. EMA period is configurable.
 """
 
 import numpy as np
@@ -18,15 +18,19 @@ import context
 class EMA200Long(BaseStrategy):
     """Buy above 200 EMA, sell below. Conservative trend following."""
 
-    # === FIXED STRATEGY PARAMETERS ===
+    # === STRATEGY PARAMETERS ===
     ID = "1"
     NAME = "200 EMA Long"
     DESCRIPTION = "Buy when price crosses above 200 EMA, sell when crosses below"
-    INTERVAL = 300  # Check every 5 minutes (slow strategy)
+    INTERVAL = 300  # Check every 5 minutes
 
-    # Trading parameters - ALL FIXED
+    # Trading parameters
     EMA_PERIOD = 200
     QUANTITY = 10
+
+    # OHLC data parameters
+    OHLC_INTERVAL = "5min"  # Bar interval
+    OHLC_DAYS = 10  # Days of history (ensures enough bars for EMA warmup)
 
     # Exit strategy (uses defaults from BaseStrategy: 1% SL, 2% TP)
     # Uncomment and modify to override:
@@ -68,8 +72,10 @@ class EMA200Long(BaseStrategy):
 
         try:
             # Fetch OHLC data
-            ohlc = await self.tiingo.get_daily_ohlc(
-                self.symbol, days=self.EMA_PERIOD + 50
+            ohlc = await self.tiingo.get_ohlc(
+                self.symbol,
+                days=self.OHLC_DAYS,
+                interval=self.OHLC_INTERVAL
             )
             if not ohlc:
                 return

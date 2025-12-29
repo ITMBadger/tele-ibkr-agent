@@ -13,14 +13,13 @@ Utilities:
     filter_to_market_hours - Filter to NYSE market hours
 
 Types:
-    OHLCBar - Daily bar type
-    IntradayBar - Intraday bar type
+    OHLCBar - OHLC bar type
 
 Usage (live trading):
     from services.tiingo import TiingoService
 
     tiingo = TiingoService()
-    bars = await tiingo.get_daily_ohlc("QQQ", days=250)
+    bars = await tiingo.get_ohlc("QQQ", days=5, interval="5min")
     await tiingo.close()
 
 Usage (backtest with custom cache):
@@ -41,7 +40,7 @@ from .filters import (
     format_et,
     format_df_dates,
 )
-from .service import IntradayBar, OHLCBar, TiingoService
+from .service import OHLCBar, TiingoService
 
 __all__ = [
     # High-level service
@@ -59,5 +58,4 @@ __all__ = [
     "format_df_dates",
     # Types
     "OHLCBar",
-    "IntradayBar",
 ]

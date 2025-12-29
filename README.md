@@ -114,10 +114,9 @@ The Tiingo data service uses a clean 3-layer architecture for optimal performanc
 ┌────────────────────────────▼────────────────────────────────┐
 │  LAYER 3: Public API                                        │
 ├─────────────────────────────────────────────────────────────┤
-│  • get_daily_ohlc(use_cache=True)                          │
-│  • get_intraday_ohlc(use_cache=True)                       │
+│  • get_ohlc(days, interval, use_cache=True)                │
 │  • get_current_price() - no cache (real-time)              │
-│  • get_closes(), get_intraday_closes()                     │
+│  • get_closes(days, interval)                              │
 └─────────────────────────────────────────────────────────────┘
 ```
 

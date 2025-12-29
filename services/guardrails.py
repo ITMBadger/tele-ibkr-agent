@@ -6,41 +6,52 @@ unintended trades and enforce safety limits.
 All guardrails are loaded from .env and enforced in order_service.submit_order().
 
 To modify guardrails, update .env file:
-- ALLOWED_ACCOUNTS: Comma-separated list of allowed account IDs
-- MAX_ORDER_QUANTITY: Maximum units per order (shares for stocks, coins for crypto)
+- IBKR_ALLOWED_ACCOUNTS: Comma-separated list of allowed IBKR account IDs
+- IBKR_MAX_ORDER_QUANTITY: Max shares per order for IBKR
+- HYPERLIQUID_ALLOWED_ACCOUNTS: Comma-separated list of allowed Hyperliquid accounts
+- HYPERLIQUID_MAX_ORDER_QUANTITY: Max contracts per order for Hyperliquid
 - SLIPPAGE_TOLERANCE: Maximum % difference between trigger and market price
 """
 
 import os
 
+import context
+
 
 # === GUARDRAIL CONFIGURATION (loaded from .env) ===
 
-def load_guardrails() -> tuple[list[str], float, float]:
-    """
-    Load guardrail settings from environment variables.
+# Slippage tolerance is shared across brokers
+SLIPPAGE_TOLERANCE = float(os.getenv("SLIPPAGE_TOLERANCE", "1.0"))
 
-    Returns:
-        (allowed_accounts, max_quantity, slippage_tolerance)
-    """
-    allowed_accounts_str = os.getenv("ALLOWED_ACCOUNTS", "")
-    # Support both uppercase (IBKR) and lowercase (hl-0x...) account formats
-    allowed_accounts = [acc.strip() for acc in allowed_accounts_str.split(",") if acc.strip()]
-    # Use float for quantity to support fractional crypto trading
-    max_quantity = float(os.getenv("MAX_ORDER_QUANTITY", "100"))
-    slippage_tolerance = float(os.getenv("SLIPPAGE_TOLERANCE", "1.0"))  # Default 1%
-    return allowed_accounts, max_quantity, slippage_tolerance
+# Broker-specific settings
+_IBKR_ACCOUNTS_STR = os.getenv("IBKR_ALLOWED_ACCOUNTS", "")
+_IBKR_ACCOUNTS = [acc.strip() for acc in _IBKR_ACCOUNTS_STR.split(",") if acc.strip()]
+_IBKR_MAX_QTY = float(os.getenv("IBKR_MAX_ORDER_QUANTITY", "100"))
+
+_HL_ACCOUNTS_STR = os.getenv("HYPERLIQUID_ALLOWED_ACCOUNTS", "")
+_HL_ACCOUNTS = [acc.strip() for acc in _HL_ACCOUNTS_STR.split(",") if acc.strip()]
+_HL_MAX_QTY = float(os.getenv("HYPERLIQUID_MAX_ORDER_QUANTITY", "2.0"))
 
 
-# Load guardrails on module import
-ALLOWED_ACCOUNTS, MAX_ORDER_QUANTITY, SLIPPAGE_TOLERANCE = load_guardrails()
+def get_allowed_accounts() -> list[str]:
+    """Get allowed accounts for the active broker."""
+    if context.active_broker == "hyperliquid":
+        return _HL_ACCOUNTS
+    return _IBKR_ACCOUNTS
+
+
+def get_max_order_quantity() -> float:
+    """Get max order quantity for the active broker."""
+    if context.active_broker == "hyperliquid":
+        return _HL_MAX_QTY
+    return _IBKR_MAX_QTY
 
 
 # === GUARDRAIL VALIDATION FUNCTIONS ===
 
 def validate_account(account: str | None) -> tuple[bool, str]:
     """
-    Validate if account is in allowed list.
+    Validate if account is in allowed list for the active broker.
 
     Args:
         account: Account ID to validate
@@ -48,20 +59,21 @@ def validate_account(account: str | None) -> tuple[bool, str]:
     Returns:
         (is_valid, error_message)
     """
-    if ALLOWED_ACCOUNTS and account:
+    allowed = get_allowed_accounts()
+    if allowed and account:
         # Case-insensitive comparison to support both IBKR (uppercase) and Hyperliquid (lowercase)
-        allowed_lower = [a.lower() for a in ALLOWED_ACCOUNTS]
+        allowed_lower = [a.lower() for a in allowed]
         if account.lower() not in allowed_lower:
             return False, (
                 f"🚫 GUARDRAIL BLOCKED: Account '{account}' is not in the allowed accounts list.\n"
-                f"Allowed accounts: {', '.join(ALLOWED_ACCOUNTS)}"
+                f"Allowed accounts: {', '.join(allowed)}"
             )
     return True, ""
 
 
 def validate_quantity(quantity: float) -> tuple[bool, str]:
     """
-    Validate if quantity is within allowed limit.
+    Validate if quantity is within allowed limit for the active broker.
 
     Args:
         quantity: Number of units (shares for stocks, coins for crypto)
@@ -69,10 +81,11 @@ def validate_quantity(quantity: float) -> tuple[bool, str]:
     Returns:
         (is_valid, error_message)
     """
-    if quantity > MAX_ORDER_QUANTITY:
+    max_qty = get_max_order_quantity()
+    if quantity > max_qty:
         return False, (
-            f"🚫 GUARDRAIL BLOCKED: Order quantity {quantity} exceeds maximum allowed ({MAX_ORDER_QUANTITY}).\n"
-            f"Max allowed per trade: {MAX_ORDER_QUANTITY} units"
+            f"🚫 GUARDRAIL BLOCKED: Order quantity {quantity} exceeds maximum allowed ({max_qty}).\n"
+            f"Max allowed per trade: {max_qty} units"
         )
     return True, ""
 

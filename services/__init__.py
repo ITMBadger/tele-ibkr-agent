@@ -2,7 +2,7 @@
 
 from .tiingo import TiingoService, TiingoCache, TiingoAPI, filter_to_market_hours
 from .broker_base import BrokerInterface, BrokerCapabilities, get_broker, list_brokers
-from .market_data import MarketDataProvider, TiingoDataProvider, HyperliquidDataProvider
+from .market_data import MarketDataProvider, TiingoDataProvider, HyperliquidDataProvider, CRYPTO_SYMBOLS
 
 __all__ = [
     # Market data (Tiingo)
@@ -14,6 +14,7 @@ __all__ = [
     "MarketDataProvider",
     "TiingoDataProvider",
     "HyperliquidDataProvider",
+    "CRYPTO_SYMBOLS",
     # Broker abstraction
     "BrokerInterface",
     "BrokerCapabilities",

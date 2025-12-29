@@ -14,6 +14,7 @@ import time
 import context
 from models import TradeSignal
 from services import guardrails
+from services.market_data import CRYPTO_SYMBOLS
 
 
 def _translate_symbol_for_tiingo(symbol: str) -> str:
@@ -22,21 +23,23 @@ def _translate_symbol_for_tiingo(symbol: str) -> str:
 
     Hyperliquid: BTC → BTCUSD
     IBKR: QQQ → QQQ (no change)
+
+    Uses centralized CRYPTO_SYMBOLS from market_data.py.
     """
-    if context.active_broker == "hyperliquid":
-        # Crypto symbols need USD suffix for Tiingo
-        crypto_map = {
-            "BTC": "BTCUSD",
-            "ETH": "ETHUSD",
-            "SOL": "SOLUSD",
-            "AVAX": "AVAXUSD",
-            "MATIC": "MATICUSD",
-            "LINK": "LINKUSD",
-            "UNI": "UNIUSD",
-            "DOGE": "DOGEUSD",
-        }
-        return crypto_map.get(symbol.upper(), f"{symbol.upper()}USD")
-    return symbol
+    if context.active_broker != "hyperliquid":
+        return symbol
+
+    symbol_upper = symbol.upper()
+    # Already has USD suffix
+    if symbol_upper.endswith("USD") or symbol_upper.endswith("USDT"):
+        return symbol
+
+    # Known crypto - add USD suffix
+    if symbol_upper in CRYPTO_SYMBOLS:
+        return f"{symbol_upper}USD"
+
+    # Unknown crypto - assume needs USD suffix
+    return f"{symbol_upper}USD"
 
 
 def check_slippage(symbol: str, timeout: float = 5.0) -> tuple[bool, str, float | None, float | None, float | None]:
@@ -192,8 +195,8 @@ def submit_order(
         return False
 
     # Log account and quantity guardrail pass
-    print(f"   ✓ Account guardrail passed: {context.current_account} (allowed: {', '.join(guardrails.ALLOWED_ACCOUNTS)})")
-    print(f"   ✓ Quantity guardrail passed: {quantity} shares (max: {guardrails.MAX_ORDER_QUANTITY})")
+    print(f"   ✓ Account guardrail passed: {context.current_account} (allowed: {', '.join(guardrails.get_allowed_accounts())})")
+    print(f"   ✓ Quantity guardrail passed: {quantity} (max: {guardrails.get_max_order_quantity()})")
 
     # Check slippage (Tiingo trigger price vs broker market price)
     slippage_ok, slippage_error, slippage_pct, trigger_price, broker_price = check_slippage(symbol)

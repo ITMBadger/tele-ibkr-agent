@@ -29,18 +29,7 @@ DEFAULT_CACHE_DIR = Path(__file__).parent.parent.parent / "data" / "cache"
 
 
 class OHLCBar(TypedDict):
-    """Single daily OHLC bar."""
-
-    date: str
-    open: float
-    high: float
-    low: float
-    close: float
-    volume: int
-
-
-class IntradayBar(TypedDict):
-    """Single intraday OHLC bar."""
+    """Single OHLC bar."""
 
     date: str
     open: float
@@ -61,11 +50,8 @@ class TiingoService:
     Usage:
         tiingo = TiingoService()
 
-        # Daily data (cached)
-        daily = await tiingo.get_daily_ohlc("QQQ", days=250)
-
-        # Intraday data (cached)
-        bars = await tiingo.get_intraday_ohlc("QQQ", days=5, interval="5min")
+        # OHLC data (cached)
+        bars = await tiingo.get_ohlc("QQQ", days=5, interval="5min")
 
         # Current price (no cache)
         price = await tiingo.get_current_price("QQQ")
@@ -104,12 +90,11 @@ class TiingoService:
         self,
         symbol: str,
         days: int,
-        data_type: str,
+        interval: str,
         use_cache: bool = True,
-        **fetch_kwargs,
     ) -> pd.DataFrame:
         """
-        Generic two-call cache strategy.
+        Two-call cache strategy for OHLC data.
 
         Strategy:
             1. Historical (days ago -> yesterday): Cached permanently
@@ -119,9 +104,8 @@ class TiingoService:
         Args:
             symbol: Stock symbol or crypto ticker (e.g., "QQQ" or "BTCUSD")
             days: Number of days of history
-            data_type: Cache key type (e.g., "daily", "1min", "5min")
+            interval: Bar interval (e.g., "1min", "5min")
             use_cache: Whether to use cache for historical data
-            **fetch_kwargs: Additional args for API fetch
 
         Returns:
             Combined DataFrame
@@ -139,7 +123,7 @@ class TiingoService:
         historical_start = start_date.strftime("%Y%m%d")
         historical_end = yesterday.strftime("%Y%m%d")
         cache_path = self.cache.get_path(
-            symbol, data_type, historical_start, historical_end
+            symbol, interval, historical_start, historical_end
         )
 
         historical_df = None
@@ -148,20 +132,14 @@ class TiingoService:
 
         if historical_df is None:
             # Cache miss - fetch from API
-            if data_type == "daily":
-                historical_df = await self.api.fetch_daily(
-                    symbol, start_date, yesterday
+            if is_crypto:
+                historical_df = await self.api.fetch_crypto_intraday(
+                    symbol, start_date, yesterday, interval=interval
                 )
             else:
-                # Route to crypto or stock endpoint based on symbol
-                if is_crypto:
-                    historical_df = await self.api.fetch_crypto_intraday(
-                        symbol, start_date, yesterday, interval=data_type
-                    )
-                else:
-                    historical_df = await self.api.fetch_intraday(
-                        symbol, start_date, yesterday, interval=data_type
-                    )
+                historical_df = await self.api.fetch_intraday(
+                    symbol, start_date, yesterday, interval=interval
+                )
 
             # Save to cache (historical data doesn't change)
             if use_cache and historical_df is not None and not historical_df.empty:
@@ -171,18 +149,14 @@ class TiingoService:
             all_dfs.append(historical_df)
 
         # ===== CALL 2: Today's data (always fresh, no cache) =====
-        if data_type == "daily":
-            today_df = await self.api.fetch_daily(symbol, today, datetime.now())
+        if is_crypto:
+            today_df = await self.api.fetch_crypto_intraday(
+                symbol, today, datetime.now(), interval=interval
+            )
         else:
-            # Route to crypto or stock endpoint based on symbol
-            if is_crypto:
-                today_df = await self.api.fetch_crypto_intraday(
-                    symbol, today, datetime.now(), interval=data_type
-                )
-            else:
-                today_df = await self.api.fetch_intraday(
-                    symbol, today, datetime.now(), interval=data_type
-                )
+            today_df = await self.api.fetch_intraday(
+                symbol, today, datetime.now(), interval=interval
+            )
 
         if today_df is not None and not today_df.empty:
             all_dfs.append(today_df)
@@ -193,81 +167,15 @@ class TiingoService:
 
         return pd.concat(all_dfs, ignore_index=True)
 
-    async def get_daily_ohlc(
-        self,
-        symbol: str,
-        days: int = 250,
-        use_cache: bool = True,
-    ) -> list[OHLCBar]:
-        """
-        Fetch daily OHLC data.
-
-        Uses two-call cache strategy:
-        - Historical (days ago -> yesterday): Cached permanently
-        - Today: Always fresh
-
-        Args:
-            symbol: Stock symbol (e.g., "QQQ")
-            days: Number of days of history (default 250 for ~1 year)
-            use_cache: Whether to use cache (default True)
-
-        Returns:
-            List of OHLC bars, oldest first
-        """
-        df = await self._fetch_with_cache(
-            symbol=symbol,
-            days=days,
-            data_type="daily",
-            use_cache=use_cache,
-        )
-
-        if df.empty:
-            return []
-
-        # Convert to list of OHLCBar TypedDicts
-        bars = []
-        for _, row in df.iterrows():
-            bars.append(
-                OHLCBar(
-                    date=str(row["date"]),
-                    open=float(row["open"]),
-                    high=float(row["high"]),
-                    low=float(row["low"]),
-                    close=float(row["close"]),
-                    volume=int(row["volume"]),
-                )
-            )
-        return bars
-
-    async def get_closes(
-        self,
-        symbol: str,
-        days: int = 250,
-        use_cache: bool = True,
-    ) -> list[float]:
-        """
-        Get just the closing prices (daily).
-
-        Args:
-            symbol: Stock symbol
-            days: Number of days of history
-            use_cache: Whether to use cache (default True)
-
-        Returns:
-            List of closing prices, oldest first
-        """
-        bars = await self.get_daily_ohlc(symbol, days, use_cache)
-        return [bar["close"] for bar in bars]
-
-    async def get_intraday_ohlc(
+    async def get_ohlc(
         self,
         symbol: str,
         days: int = 5,
         interval: str = "5min",
         use_cache: bool = True,
-    ) -> list[IntradayBar]:
+    ) -> list[OHLCBar]:
         """
-        Fetch intraday OHLC data.
+        Fetch OHLC data.
 
         Uses two-call cache strategy:
         - Historical (days ago -> yesterday): Cached permanently
@@ -288,7 +196,7 @@ class TiingoService:
         df = await self._fetch_with_cache(
             symbol=symbol,
             days=days,
-            data_type=interval,
+            interval=interval,
             use_cache=use_cache,
         )
 
@@ -302,11 +210,11 @@ class TiingoService:
             if df.empty:
                 return []
 
-        # Convert to list of IntradayBar TypedDicts
+        # Convert to list of OHLCBar TypedDicts
         bars = []
         for _, row in df.iterrows():
             bars.append(
-                IntradayBar(
+                OHLCBar(
                     date=str(row["date"]),
                     open=float(row["open"]),
                     high=float(row["high"]),
@@ -317,7 +225,7 @@ class TiingoService:
             )
         return bars
 
-    async def get_intraday_closes(
+    async def get_closes(
         self,
         symbol: str,
         days: int = 5,
@@ -325,7 +233,7 @@ class TiingoService:
         use_cache: bool = True,
     ) -> list[float]:
         """
-        Get just the closing prices for intraday bars.
+        Get just the closing prices.
 
         Args:
             symbol: Stock symbol
@@ -336,7 +244,7 @@ class TiingoService:
         Returns:
             List of closing prices, oldest first
         """
-        bars = await self.get_intraday_ohlc(symbol, days, interval, use_cache)
+        bars = await self.get_ohlc(symbol, days, interval, use_cache)
         return [bar["close"] for bar in bars]
 
     async def get_current_price(self, symbol: str) -> float:
@@ -344,7 +252,7 @@ class TiingoService:
         Get the latest price for a symbol.
 
         This method does NOT use cache as it's real-time data.
-        Tries IEX real-time endpoint first, falls back to daily data.
+        Tries IEX real-time endpoint first, falls back to OHLC data.
 
         Args:
             symbol: Stock symbol
@@ -358,8 +266,8 @@ class TiingoService:
         try:
             return await self.api.fetch_current_price(symbol)
         except Exception:
-            # Fallback to daily endpoint (will use cache)
-            bars = await self.get_daily_ohlc(symbol, days=5)
+            # Fallback to OHLC endpoint
+            bars = await self.get_ohlc(symbol, days=1, interval="5min")
             if bars:
                 return bars[-1]["close"]
             raise Exception(f"No price data for {symbol}")
