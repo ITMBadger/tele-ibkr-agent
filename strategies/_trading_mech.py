@@ -56,6 +56,13 @@ class BaseStrategy(ABC):
 
     # === LOGGING CONFIGURATION ===
     PERIODIC_LOG_INTERVAL: int = 1800  # 30 minutes in seconds
+
+    # === SIGNAL BAR INDEX ===
+    # Which bar the strategy acts on. After finalize_signals() shifts by 1:
+    # - signal[-1] corresponds to data from bar[-2]
+    # - We trade on the completed bar's close, not the current incomplete bar
+    # Override this in a subclass if your strategy uses a different bar.
+    TRIGGER_BAR_INDEX: int = -2
     
     def __init__(
         self,
@@ -646,6 +653,9 @@ class BaseStrategy(ABC):
 
         Disabled in backtest mode for performance.
 
+        Uses self.TRIGGER_BAR_INDEX to determine which bar triggered the signal.
+        This ensures logging reflects the exact bar the strategy acted on.
+
         Args:
             ohlc_bars: Full OHLC data (all bars used for calculation)
             indicator_columns: Dict of indicator name -> list of values per bar
@@ -669,7 +679,8 @@ class BaseStrategy(ABC):
             indicator_columns=indicator_columns,
             signal=signal,
             triggered=triggered,
-            event_type=event_type
+            event_type=event_type,
+            row_index=self.TRIGGER_BAR_INDEX
         )
 
         if success and event_type == "periodic":

@@ -110,9 +110,10 @@ class EMAOnly(StrategyTemplate):
             df = self.compute_signals(df)
 
             # Get signal and price
+            # signal[-1] is the shifted signal, corresponding to TRIGGER_BAR_INDEX
             current_signal = int(df["signal"].iloc[-1])
-            current_price = df["close"].iloc[-2]
-            ema_value = df["ema"].iloc[-2]
+            current_price = df["close"].iloc[self.TRIGGER_BAR_INDEX]
+            ema_value = df["ema"].iloc[self.TRIGGER_BAR_INDEX]
 
             # Update context
             import context
@@ -120,7 +121,11 @@ class EMAOnly(StrategyTemplate):
 
             # Build indicator columns for logging
             ema_series = [None if pd.isna(v) else v for v in df["ema"].tolist()]
-            indicator_cols = {f"ema_{self.EMA_PERIOD}": ema_series}
+            signal_series = [v for v in df["signal"].tolist()]
+            indicator_cols = {
+                f"ema_{self.EMA_PERIOD}": ema_series,
+                "strat_signal": signal_series
+            }
 
             # === LONG SIGNAL ===
             if current_signal == 1:
@@ -146,7 +151,8 @@ class EMAOnly(StrategyTemplate):
 
             # === PERIODIC LOGGING ===
             elif self.should_log_periodic():
-                status = "HOLD" if self.has_position() else "NONE"
+                signal_str = "BUY" if current_signal == 1 else ("SELL" if current_signal == -1 else "NONE")
+                status = f"{signal_str} (pos: {self.has_position()})"
                 self.log_strategy_data(ohlc, indicator_cols, status, False, "periodic")
 
         except Exception as e:

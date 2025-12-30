@@ -33,6 +33,7 @@ from services.logger import SignalLogger
 
 STRATEGY_ID = "888"
 INTERVAL = 60  # Trigger at every minute boundary (xx:00s)
+TRIGGER_BAR_INDEX = -2  # Same as BaseStrategy - use completed bar, not current
 
 # Broker-specific defaults
 BROKER_CONFIG = {
@@ -574,8 +575,8 @@ async def execute_pending_buy() -> str | None:
 
     # === GLOBAL SHIFT LOGIC (same as other strategies) ===
     # Signal bar = iloc[-1] (current incomplete bar)
-    # Trigger price = iloc[-2] (last completed bar's close)
-    trigger_bar = ohlc_data[-2]
+    # Trigger price = TRIGGER_BAR_INDEX (last completed bar's close)
+    trigger_bar = ohlc_data[TRIGGER_BAR_INDEX]
     trigger_price = trigger_bar['close']
     trigger_time = format_iso_to_et(trigger_bar['date'])
 
@@ -604,7 +605,8 @@ async def execute_pending_buy() -> str | None:
         indicator_columns=None,  # No indicators for component test
         signal="BUY",
         triggered=success,
-        event_type="signal"
+        event_type="signal",
+        row_index=TRIGGER_BAR_INDEX
     )
 
     # Track position via pos_manager (same as other strategies)

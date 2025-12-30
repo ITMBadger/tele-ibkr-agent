@@ -31,7 +31,7 @@ load_dotenv(PROJECT_ROOT / ".env")
 
 # Strategy settings
 DEFAULT_STRATEGY = "strat_multi_toggle"
-DEFAULT_SYMBOL = "QQQ"
+DEFAULT_SYMBOL = "TQQQ"
 DEFAULT_MONTHS_BACK = 12
 
 # Capital & costs

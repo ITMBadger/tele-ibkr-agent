@@ -315,7 +315,8 @@ class SignalLogger:
         indicator_columns: dict[str, list[float | None]] | None = None,
         signal: str = "",
         triggered: bool = False,
-        event_type: str = "periodic"  # "signal" or "periodic"
+        event_type: str = "periodic",  # "signal" or "periodic"
+        row_index: int = -2
     ) -> bool:
         """
         Log OHLC data with indicators to CSV (for live mode).
@@ -326,6 +327,8 @@ class SignalLogger:
             signal: Signal type ("BUY", "SELL", "HOLD", etc.)
             triggered: Whether order was actually submitted
             event_type: "signal" (on trigger) or "periodic" (30-min snapshot)
+            row_index: Index of the bar that triggered the signal. Supports negative
+                       indexing (e.g., -2 for completed bar, -1 for current bar).
 
         Returns:
             bool: True if logged successfully
@@ -366,14 +369,18 @@ class SignalLogger:
                         except (ValueError, TypeError):
                             return val
 
+                    # Determine which row gets the signal/triggered values
+                    # Convert negative index to positive (e.g., -2 -> len-2)
+                    target_index = row_index if row_index >= 0 else len(ohlc_bars) + row_index
+
                     for i, bar in enumerate(ohlc_bars):
-                        is_last = i == len(ohlc_bars) - 1
+                        is_target = (i == target_index)
 
                         row = [
                             event_time,
                             event_type,
-                            signal if is_last else "",
-                            triggered if is_last else "",
+                            signal if is_target else "",
+                            triggered if is_target else "",
                             format_iso_to_et(bar.get("date", "")),
                             _round_num(bar.get("open", "")),
                             _round_num(bar.get("high", "")),

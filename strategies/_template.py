@@ -257,19 +257,21 @@ class StrategyTemplate(BaseStrategy):
             df = self.compute_signals(df)
 
             # Get signal and price
+            # signal[-1] is the shifted signal, corresponding to TRIGGER_BAR_INDEX
             current_signal = int(df["signal"].iloc[-1])
-            current_price = df["close"].iloc[-2]
+            current_price = df["close"].iloc[self.TRIGGER_BAR_INDEX]
 
             # Update context
             import context
             context.latest_prices.set(self.symbol, current_price)
 
             # Build indicator columns for logging
-            base_cols = {"date", "open", "high", "low", "close", "volume", "signal"}
-            indicator_cols = {
-                col: [None if pd.isna(v) else v for v in df[col].tolist()]
-                for col in df.columns if col not in base_cols
-            }
+            base_cols = {"date", "open", "high", "low", "close", "volume"}
+            indicator_cols = {}
+            for col in df.columns:
+                if col not in base_cols:
+                    col_name = "strat_signal" if col == "signal" else col
+                    indicator_cols[col_name] = [None if pd.isna(v) else v for v in df[col].tolist()]
 
             # Execute trade if signal
             if current_signal == 1 and not self.has_position():
@@ -278,7 +280,8 @@ class StrategyTemplate(BaseStrategy):
                 self.log_strategy_data(ohlc, indicator_cols, "BUY", triggered, "signal")
 
             elif self.should_log_periodic():
-                status = "HOLD" if self.has_position() else "NONE"
+                signal_str = "BUY" if current_signal == 1 else "NONE"
+                status = f"{signal_str} (pos: {self.has_position()})"
                 self.log_strategy_data(ohlc, indicator_cols, status, False, "periodic")
 
         except Exception as e:
