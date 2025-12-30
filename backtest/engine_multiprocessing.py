@@ -13,12 +13,13 @@ Standalone usage:
     python backtest/engine_multiprocessing.py
 """
 
-from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Any, Type, Optional
 import importlib
 import pandas as pd
 import psutil
+
+from services.time_centralize_utils import get_et_now, get_et_timestamp
 
 from .config import BacktestConfig
 from .providers.loader import load_ohlc, get_bar_count, get_ohlc_file_path
@@ -256,7 +257,7 @@ class BacktestEngine:
                         "strategy": self.config.strategy,
                         "start_date": self.config.start_date,
                         "end_date": self.config.end_date,
-                        "generated_at": datetime.now().isoformat(),
+                        "generated_at": get_et_timestamp(),
                     },
                 )
                 print(f"  {symbol}: Signals cached")
@@ -361,7 +362,7 @@ class BacktestEngine:
             results_dir = self._results_dir
 
         if results_dir is None:
-            run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+            run_id = get_et_now().strftime("%Y%m%d_%H%M%S")
             results_dir = Path(self.config.results_dir) / run_id
 
         results_dir = Path(results_dir)
@@ -447,7 +448,7 @@ class BacktestEngine:
             BacktestResult with performance metrics
         """
         # Step 0: Create results directory (needed for debug CSV output during signal generation)
-        run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+        run_id = get_et_now().strftime("%Y%m%d_%H%M%S")
         self._results_dir = Path(self.config.results_dir) / run_id
         self._results_dir.mkdir(parents=True, exist_ok=True)
         print(f"\n[Step 0] Results directory: {self._results_dir}")

@@ -16,9 +16,11 @@ Standalone usage:
 
 import importlib
 import pandas as pd
-from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Any, Type, Optional
+
+from services.time_centralize_utils import get_et_now, ET_DATETIME_FORMAT
+from services.logger import SignalLogger
 
 from .config import BacktestConfig
 from .providers.loader import load_ohlc
@@ -27,8 +29,6 @@ from .execution.simulator import SimulatedBroker
 from .metrics.calculator import BacktestResult, build_backtest_result
 from .metrics.report import save_results, print_summary
 from .visualization import generate_html_dashboard
-from services.logger import SignalLogger
-from services.tiingo import ET_DATETIME_FORMAT
 
 
 class VectorizedBacktestEngine:
@@ -274,7 +274,7 @@ class VectorizedBacktestEngine:
             results_dir = self._results_dir
 
         if results_dir is None:
-            run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+            run_id = get_et_now().strftime("%Y%m%d_%H%M%S")
             results_dir = Path(self.config.results_dir) / f"vectorized_{run_id}"
 
         results_dir = Path(results_dir)
@@ -360,7 +360,7 @@ class VectorizedBacktestEngine:
     def run(self) -> BacktestResult:
         """Run complete vectorized backtest pipeline."""
         # Set up run_id and SignalLogger mode
-        run_id = f"vectorized_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        run_id = f"vectorized_{get_et_now().strftime('%Y%m%d_%H%M%S')}"
         self._results_dir = Path(self.config.results_dir) / run_id
         SignalLogger.set_mode("backtest", run_id)
 

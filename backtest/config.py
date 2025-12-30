@@ -2,9 +2,11 @@
 """Configuration dataclass for backtesting."""
 
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import timedelta
 from pathlib import Path
 from typing import List, Optional
+
+from services.time_centralize_utils import get_et_now, get_et_date, parse_datetime
 
 # Project root directory (parent of backtest/)
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -66,9 +68,9 @@ class BacktestConfig:
         """Validate configuration and compute date range."""
         # Compute date range from months_back if not explicitly set
         if self.end_date is None:
-            self.end_date = datetime.now().strftime("%Y-%m-%d")
+            self.end_date = get_et_date()
         if self.start_date is None:
-            end_dt = datetime.strptime(self.end_date, "%Y-%m-%d")
+            end_dt = parse_datetime(self.end_date)
             start_dt = end_dt - timedelta(days=self.months_back * 30)
             self.start_date = start_dt.strftime("%Y-%m-%d")
 

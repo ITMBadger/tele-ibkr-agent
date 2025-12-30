@@ -244,10 +244,15 @@ class HyperliquidDataProvider(MarketDataProvider):
         return bars
 
     def _format_timestamp(self, ts_ms: int) -> str:
-        """Convert timestamp (ms) to ISO format string."""
+        """Convert timestamp (ms) to naive ET string format."""
         from datetime import datetime
-        dt = datetime.utcfromtimestamp(ts_ms / 1000)
-        return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+        from services.time_centralize_utils import ET_TZ, ET_DATETIME_FORMAT, UTC_TZ
+
+        # Convert ms timestamp to UTC datetime
+        dt_utc = datetime.fromtimestamp(ts_ms / 1000, tz=UTC_TZ)
+        # Convert to ET and format as naive ET string
+        dt_et = dt_utc.astimezone(ET_TZ)
+        return dt_et.strftime(ET_DATETIME_FORMAT)
 
     async def get_current_price(self, symbol: str) -> float:
         """Get current mid price from Hyperliquid."""

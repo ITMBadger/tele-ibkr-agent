@@ -1,68 +1,16 @@
-# services/tiingo/filters.py - Market hours filtering and datetime utilities.
+# services/tiingo/filters.py - Market hours filtering for OHLC data.
 """
 Filter OHLC data to NYSE market hours only.
 
-This module provides:
-1. Market hours filtering for intraday data
-2. Datetime standardization utilities for naive ET format
-
-Standard datetime format: '2024-12-24 09:30:00' (naive ET, no timezone offset)
+This module provides market hours filtering for intraday data.
+For datetime utilities, use services.time_centralize_utils (centralized time server).
 """
-
-from datetime import datetime
-from typing import Union
 
 import pandas as pd
 import pandas_market_calendars as mcal
 
-try:
-    from zoneinfo import ZoneInfo
-except ImportError:
-    from pytz import timezone as ZoneInfo
-
-
-# =============================================================================
-# DATETIME STANDARDIZATION
-# =============================================================================
-
-# Standard format for all datetime strings in this project
-ET_DATETIME_FORMAT = "%Y-%m-%d %H:%M:%S"
-
-# Eastern timezone
-ET_TZ = ZoneInfo("America/New_York")
-
-
-def to_naive_et(dt: Union[datetime, pd.Timestamp]) -> datetime:
-    """
-    Convert any datetime to naive Eastern Time.
-
-    Args:
-        dt: Datetime (can be timezone-aware or naive)
-
-    Returns:
-        Naive datetime in ET (no timezone info)
-    """
-    if isinstance(dt, pd.Timestamp):
-        dt = dt.to_pydatetime()
-
-    if dt.tzinfo is not None:
-        # Convert to ET then strip timezone
-        dt = dt.astimezone(ET_TZ)
-
-    return dt.replace(tzinfo=None)
-
-
-def format_et(dt: Union[datetime, pd.Timestamp]) -> str:
-    """
-    Format datetime as naive ET string.
-
-    Args:
-        dt: Datetime to format
-
-    Returns:
-        String in format '2024-12-24 09:30:00'
-    """
-    return to_naive_et(dt).strftime(ET_DATETIME_FORMAT)
+# Import from centralized time server
+from services.time_centralize_utils import ET_DATETIME_FORMAT
 
 
 def format_df_dates(df: pd.DataFrame, date_column: str = "date") -> pd.DataFrame:

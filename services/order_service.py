@@ -64,8 +64,8 @@ def check_slippage(symbol: str, timeout: float = 5.0) -> tuple[bool, str, float 
 
     # If no cached price, fetch fresh OHLC (component test mode)
     if trigger_price is None:
-        from services.tiingo import TiingoService
-        from datetime import datetime, timedelta
+        from datetime import timedelta
+        from services.time_centralize_utils import get_utc_now
 
         tiingo_symbol = _translate_symbol_for_tiingo(symbol)
 
@@ -82,7 +82,7 @@ def check_slippage(symbol: str, timeout: float = 5.0) -> tuple[bool, str, float 
             from services.tiingo.api import TiingoAPI
 
             tiingo_api = TiingoAPI()
-            end_time = datetime.utcnow()  # Use UTC time
+            end_time = get_utc_now()
             start_time = end_time - timedelta(hours=24)  # Last 24 hours for better data availability
 
             # Detect if crypto or stock

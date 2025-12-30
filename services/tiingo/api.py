@@ -77,12 +77,10 @@ class TiingoAPI:
     def _check_data_freshness(self, df: pd.DataFrame, symbol: str) -> None:
         """Check if latest 1-min bar is in sync with system time (internal API check)."""
         try:
-            from services.time_utils import get_et_now
+            from services.time_centralize_utils import get_et_now, to_et_aware
 
             et_now = get_et_now()
-            last_bar_dt = pd.to_datetime(df["date"].iloc[-1]).tz_convert(
-                "America/New_York"
-            )
+            last_bar_dt = to_et_aware(df["date"].iloc[-1])
 
             delay_seconds = (et_now - last_bar_dt).total_seconds()
             minute_match = et_now.minute == last_bar_dt.minute

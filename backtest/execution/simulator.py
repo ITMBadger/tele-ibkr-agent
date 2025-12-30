@@ -2,12 +2,37 @@
 """Trade execution simulation for backtesting - Sequential position tracking."""
 
 from typing import List, Dict, Any, Optional
-from datetime import datetime
 import numpy as np
 import pandas as pd
 
 from .position import Position, Trade, TradeDirection, TradeStatus
 from services.exits import check_exit
+
+
+def _normalize_dates_to_naive_et(df: pd.DataFrame, date_column: str = "date") -> pd.DataFrame:
+    """
+    Normalize date column to naive ET format.
+
+    - If timezone-aware: convert to ET, then strip timezone
+    - If naive: assume already ET (project standard)
+
+    Args:
+        df: DataFrame with date column
+        date_column: Name of the date column
+
+    Returns:
+        DataFrame with naive ET dates
+    """
+    df = df.copy()
+    dates = pd.to_datetime(df[date_column])
+
+    if dates.dt.tz is not None:
+        # Has timezone - convert to ET then strip
+        dates = dates.dt.tz_convert("America/New_York").dt.tz_localize(None)
+    # If naive, assume already ET (no conversion needed)
+
+    df[date_column] = dates
+    return df
 
 
 class SimulatedBroker:
@@ -80,9 +105,8 @@ class SimulatedBroker:
         if not signals:
             return self._empty_results(ohlc_df)
 
-        # Prepare data
-        ohlc_df = ohlc_df.copy()
-        ohlc_df["date"] = pd.to_datetime(ohlc_df["date"], utc=True).dt.tz_localize(None)
+        # Prepare data - normalize to naive ET
+        ohlc_df = _normalize_dates_to_naive_et(ohlc_df, "date")
         ohlc_df = ohlc_df.sort_values("date").reset_index(drop=True)
 
         n_bars = len(ohlc_df)
@@ -95,10 +119,10 @@ class SimulatedBroker:
         # Create timestamp -> bar_index lookup
         timestamp_to_idx = {pd.Timestamp(ts): idx for idx, ts in enumerate(timestamps)}
 
-        # Prepare signals
+        # Prepare signals - normalize to naive ET
         signals_df = pd.DataFrame(signals)
         if not signals_df.empty:
-            signals_df["timestamp"] = pd.to_datetime(signals_df["timestamp"], utc=True).dt.tz_localize(None)
+            signals_df = _normalize_dates_to_naive_et(signals_df, "timestamp")
         signals_df = signals_df.sort_values("timestamp").reset_index(drop=True)
 
         # Filter to entry signals (BUY = LONG entry, SELL = SHORT entry)
@@ -342,8 +366,7 @@ class SimulatedBroker:
     def _empty_results(self, ohlc_df: pd.DataFrame) -> Dict[str, Any]:
         """Return empty results structure with proper equity curve."""
         if len(ohlc_df) > 0:
-            ohlc_df = ohlc_df.copy()
-            ohlc_df["date"] = pd.to_datetime(ohlc_df["date"], utc=True).dt.tz_localize(None)
+            ohlc_df = _normalize_dates_to_naive_et(ohlc_df, "date")
             equity_df = pd.DataFrame(
                 {
                     "Equity": self.initial_capital,

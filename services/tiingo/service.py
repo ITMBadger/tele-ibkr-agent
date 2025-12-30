@@ -21,7 +21,8 @@ import pandas as pd
 
 from .api import TiingoAPI
 from .cache import TiingoCache
-from .filters import filter_to_market_hours
+from .filters import filter_to_market_hours, format_df_dates
+from services.time_centralize_utils import get_et_now, get_utc_now
 
 
 # Default cache directory for live trading
@@ -110,18 +111,29 @@ class TiingoService:
         Returns:
             Combined DataFrame
         """
-        today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-        yesterday = today - timedelta(days=1)
-        start_date = today - timedelta(days=days)
+        # Use ET time for date boundaries and cache keys
+        et_now = get_et_now()
+        today_et = et_now.replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=None)
+        yesterday_et = today_et - timedelta(days=1)
+        start_date_et = today_et - timedelta(days=days)
 
         all_dfs: list[pd.DataFrame] = []
 
         # Detect if this is a crypto symbol
         is_crypto = self._is_crypto_symbol(symbol)
 
+        # For crypto API: Convert ET to UTC (Tiingo crypto expects UTC timestamps)
+        # For stock API: Only uses YYYY-MM-DD dates, so timezone doesn't matter
+        if is_crypto:
+            utc_now = get_utc_now()
+            today_utc = utc_now.replace(hour=0, minute=0, second=0, microsecond=0)
+            yesterday_utc = today_utc - timedelta(days=1)
+            start_date_utc = today_utc - timedelta(days=days)
+
         # ===== CALL 1: Historical data (start_date to yesterday) =====
-        historical_start = start_date.strftime("%Y%m%d")
-        historical_end = yesterday.strftime("%Y%m%d")
+        # Cache keys use ET dates for consistency
+        historical_start = start_date_et.strftime("%Y%m%d")
+        historical_end = yesterday_et.strftime("%Y%m%d")
         cache_path = self.cache.get_path(
             symbol, interval, historical_start, historical_end
         )
@@ -133,12 +145,14 @@ class TiingoService:
         if historical_df is None:
             # Cache miss - fetch from API
             if is_crypto:
+                # Crypto API expects UTC
                 historical_df = await self.api.fetch_crypto_intraday(
-                    symbol, start_date, yesterday, interval=interval
+                    symbol, start_date_utc, yesterday_utc, interval=interval
                 )
             else:
+                # Stock API uses dates only (no time component)
                 historical_df = await self.api.fetch_intraday(
-                    symbol, start_date, yesterday, interval=interval
+                    symbol, start_date_et, yesterday_et, interval=interval
                 )
 
             # Save to cache (historical data doesn't change)
@@ -150,12 +164,15 @@ class TiingoService:
 
         # ===== CALL 2: Today's data (always fresh, no cache) =====
         if is_crypto:
+            # Crypto API expects UTC
             today_df = await self.api.fetch_crypto_intraday(
-                symbol, today, datetime.now(), interval=interval
+                symbol, today_utc, utc_now, interval=interval
             )
         else:
+            # Stock API uses dates only
+            now_et_naive = et_now.replace(tzinfo=None)
             today_df = await self.api.fetch_intraday(
-                symbol, today, datetime.now(), interval=interval
+                symbol, today_et, now_et_naive, interval=interval
             )
 
         if today_df is not None and not today_df.empty:
@@ -206,9 +223,13 @@ class TiingoService:
         # Filter to market hours only for stocks (not crypto)
         is_crypto = self._is_crypto_symbol(symbol)
         if not is_crypto:
+            # Stocks: filter to market hours (also converts UTC → ET)
             df = filter_to_market_hours(df)
             if df.empty:
                 return []
+        else:
+            # Crypto: convert UTC timestamps to naive ET format (no market hours filter)
+            df = format_df_dates(df, date_column="date")
 
         # Convert to list of OHLCBar TypedDicts
         bars = []

@@ -15,11 +15,10 @@ Strategy Logger:
 import sys
 import csv
 import threading
-from datetime import datetime
 from pathlib import Path
 from typing import TextIO
 
-from services.time_utils import get_et_now, format_iso_to_et
+from services.time_centralize_utils import get_et_now, format_iso_to_et
 
 
 # === PATHS ===
@@ -358,6 +357,15 @@ class SignalLogger:
 
                     event_time = get_et_now().isoformat()
 
+                    def _round_num(val, decimals=3):
+                        """Round number to specified decimals, return empty string if not a number."""
+                        if val is None or val == "":
+                            return ""
+                        try:
+                            return round(float(val), decimals)
+                        except (ValueError, TypeError):
+                            return val
+
                     for i, bar in enumerate(ohlc_bars):
                         is_last = i == len(ohlc_bars) - 1
 
@@ -367,10 +375,10 @@ class SignalLogger:
                             signal if is_last else "",
                             triggered if is_last else "",
                             format_iso_to_et(bar.get("date", "")),
-                            bar.get("open", ""),
-                            bar.get("high", ""),
-                            bar.get("low", ""),
-                            bar.get("close", ""),
+                            _round_num(bar.get("open", "")),
+                            _round_num(bar.get("high", "")),
+                            _round_num(bar.get("low", "")),
+                            _round_num(bar.get("close", "")),
                             bar.get("volume", ""),
                         ]
 
@@ -378,7 +386,7 @@ class SignalLogger:
                             values = indicator_columns.get(col_name, [])
                             if i < len(values):
                                 val = values[i]
-                                row.append(f"{val:.4f}" if val is not None else "")
+                                row.append(_round_num(val) if val is not None else "")
                             else:
                                 row.append("")
 
@@ -477,9 +485,9 @@ class SignalLogger:
         if "date" in df_out.columns:
             df_out["date"] = pd.to_datetime(df_out["date"]).dt.strftime("%Y-%m-%d %H:%M:%S")
 
-        # Round float columns
+        # Round float columns to 3 decimal places
         for col in df_out.select_dtypes(include=["float64", "float32"]).columns:
-            df_out[col] = df_out[col].round(4)
+            df_out[col] = df_out[col].round(3)
 
         df_out.to_csv(file_path, index=False)
 

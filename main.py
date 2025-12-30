@@ -32,7 +32,7 @@ from services.market_data import TiingoDataProvider
 from services.agent import GeminiAgent
 from services.telegram import TelegramBot, ENABLE_TESTING_BUTTONS
 from services.logger import terminal_logger, SignalLogger
-from services.time_utils import get_et_now
+from services.time_centralize_utils import get_et_now
 from datetime import timedelta
 
 # Conditional import for component testing
@@ -79,7 +79,7 @@ async def strategy_loop() -> None:
 
             # Component test: add to parallel tasks if pending
             if ENABLE_TESTING_BUTTONS and component_test.should_execute_pending():
-                print(f"   ⏰ [{time.strftime('%H:%M:%S')}] Dispatching: Component test...")
+                print(f"   ⏰ [{get_et_now().strftime('%H:%M:%S')}] Dispatching: Component test...")
                 
                 async def run_comp_test():
                     result = await component_test.execute_pending_buy()
@@ -93,7 +93,7 @@ async def strategy_loop() -> None:
                 strategy = data.get("strategy")
                 if strategy and strategy.should_run():
                     name = data.get("name", "Unknown")
-                    ts = time.strftime('%H:%M:%S')
+                    ts = get_et_now().strftime('%H:%M:%S')
                     print(f"   🚀 [{ts}] Executing: {name} on {symbol}")
                     tasks.append(strategy.execute())
 
@@ -106,7 +106,7 @@ async def strategy_loop() -> None:
             sleep_time = loop_tick - (now % loop_tick)
             if sleep_time < 0.5:
                 sleep_time = loop_tick
-            print(f"   ⏳ [{time.strftime('%H:%M:%S')}] Tick ({len(active)} active, sleep {sleep_time:.1f}s)")
+            print(f"   ⏳ [{get_et_now().strftime('%H:%M:%S')}] Tick ({len(active)} active, sleep {sleep_time:.1f}s)")
             await asyncio.sleep(sleep_time)
 
         except asyncio.CancelledError:

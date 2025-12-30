@@ -12,12 +12,11 @@ File location: data/positions.json
 
 import json
 import os
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 import context
-from services.time_utils import get_et_timestamp
+from services.time_centralize_utils import get_et_timestamp
 
 
 # === FILE PATH ===

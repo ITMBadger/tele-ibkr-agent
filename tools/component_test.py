@@ -25,7 +25,7 @@ import time
 import context
 from services import order_service, pos_manager
 from services.market_data import CRYPTO_SYMBOLS
-from services.time_utils import format_iso_to_et, get_et_timestamp
+from services.time_centralize_utils import format_iso_to_et, get_et_timestamp, get_utc_now
 from services.logger import SignalLogger
 
 
@@ -114,7 +114,7 @@ async def fetch_ohlc_1hour(symbol: str) -> list[dict]:
     Returns:
         List of OHLC bar dicts, or empty list on error
     """
-    from datetime import datetime, timedelta
+    from datetime import timedelta
     from services.tiingo.api import TiingoAPI
 
     tiingo_symbol = translate_symbol_for_tiingo(symbol)
@@ -122,7 +122,7 @@ async def fetch_ohlc_1hour(symbol: str) -> list[dict]:
 
     tiingo_api = TiingoAPI()
     try:
-        end_time = datetime.utcnow()
+        end_time = get_utc_now()
         start_time = end_time - timedelta(hours=1)
 
         if is_crypto:

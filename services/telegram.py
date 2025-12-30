@@ -19,7 +19,7 @@ from typing import Any
 import aiohttp
 
 import context
-from services.time_utils import get_et_timestamp
+from services.time_centralize_utils import get_et_timestamp
 
 # === TESTING FEATURE TOGGLE ===
 # Set to True to enable /test command with inline keyboard buttons
