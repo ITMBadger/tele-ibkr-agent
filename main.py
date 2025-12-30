@@ -43,6 +43,9 @@ if ENABLE_TESTING_BUTTONS:
 AUTO_SHUTDOWN_HOUR = 16
 AUTO_SHUTDOWN_MINUTE = 15  # 4:15 PM ET (15 min after market close)
 
+# Cache settings
+AUTO_CLEAR_CACHE = False  # Set to True to clear cache on startup
+
 
 async def strategy_loop() -> None:
     """
@@ -149,8 +152,11 @@ async def main():
     print("=" * 50)
     print(f"Terminal log: {log_path}")
 
-    # Clear cache on startup
-    clear_cache()
+    # Clear cache on startup (if enabled)
+    if AUTO_CLEAR_CACHE:
+        clear_cache()
+    else:
+        print("Cache: Preserved (AUTO_CLEAR_CACHE=False)")
 
     signal.signal(signal.SIGINT, handle_shutdown)
     signal.signal(signal.SIGTERM, handle_shutdown)

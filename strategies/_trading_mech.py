@@ -1,6 +1,6 @@
-# strategies/_base.py - Base class for all trading strategies.
+# strategies/_trading_mech.py - Trading mechanics base class.
 """
-base.py - Base class for all trading strategies.
+_trading_mech.py - Core trading mechanics for all strategies.
 
 Each strategy is a self-contained unit with ALL parameters fixed inside.
 No external configuration, no params passing - just activate and run.
@@ -545,7 +545,7 @@ class BaseStrategy(ABC):
         if current_price is None:
             # Try to fetch from tiingo
             try:
-                ohlc = await self.tiingo.get_ohlc(self.symbol, days=1, interval="5min")
+                ohlc = await self.tiingo.get_ohlc(self.symbol, days=1, interval="1min")
                 if ohlc:
                     current_price = ohlc[-1].get("close")
             except Exception:

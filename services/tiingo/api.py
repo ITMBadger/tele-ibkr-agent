@@ -75,7 +75,7 @@ class TiingoAPI:
         await asyncio.sleep(1.8 + random_delay)
 
     def _check_data_freshness(self, df: pd.DataFrame, symbol: str) -> None:
-        """Check if latest bar is in sync with system time."""
+        """Check if latest 1-min bar is in sync with system time (internal API check)."""
         try:
             from services.time_utils import get_et_now
 
@@ -203,7 +203,10 @@ class TiingoAPI:
                 })
 
             df = pd.DataFrame(bars)
-            self._check_data_freshness(df, symbol)
+
+            # Only check freshness for 1-min data (internal API quality check)
+            if interval == "1min":
+                self._check_data_freshness(df, symbol)
 
             print(
                 f"   [Tiingo] {symbol} {interval}: {len(df)} bars "
@@ -287,7 +290,10 @@ class TiingoAPI:
                 })
 
             df = pd.DataFrame(bars)
-            self._check_data_freshness(df, ticker)
+
+            # Only check freshness for 1-min data (internal API quality check)
+            if interval == "1min":
+                self._check_data_freshness(df, ticker)
 
             print(
                 f"   [Tiingo Crypto] {ticker} {interval}: {len(df)} bars "

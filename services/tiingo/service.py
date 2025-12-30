@@ -267,7 +267,7 @@ class TiingoService:
             return await self.api.fetch_current_price(symbol)
         except Exception:
             # Fallback to OHLC endpoint
-            bars = await self.get_ohlc(symbol, days=1, interval="5min")
+            bars = await self.get_ohlc(symbol, days=1, interval="1min")
             if bars:
                 return bars[-1]["close"]
             raise Exception(f"No price data for {symbol}")

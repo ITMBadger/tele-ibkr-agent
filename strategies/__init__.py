@@ -18,7 +18,7 @@ Usage:
 """
 
 from typing import Type, Any
-from strategies._base import BaseStrategy
+from strategies._trading_mech import BaseStrategy
 
 # Import all strategy classes
 from strategies.ema_only_long import EMAOnlyLong
