@@ -182,8 +182,8 @@ def format_iso_to_et(iso_ts: str) -> str:
         Formatted string (e.g. "2025-12-18 11:00:00-05:00")
     """
     try:
-        dt = datetime.fromisoformat(iso_ts.replace("Z", "+00:00"))
-        dt_et = dt.astimezone(ET_TZ)
+        dt = parse_datetime(iso_ts)
+        dt_et = to_et_aware(dt)
         return dt_et.isoformat(sep=" ", timespec="seconds")
     except Exception:
         return iso_ts

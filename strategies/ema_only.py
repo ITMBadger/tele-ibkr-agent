@@ -45,7 +45,7 @@ class EMAOnly(StrategyTemplate):
     OHLC_DAYS = 5
 
     # === STRATEGY PARAMS ===
-    EMA_PERIOD = 20
+    EMA_PERIOD = 12
     QUANTITY = 0.001
 
     # Exit strategy (uses defaults from BaseStrategy)

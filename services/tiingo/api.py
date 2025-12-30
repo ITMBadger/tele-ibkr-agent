@@ -246,21 +246,12 @@ class TiingoAPI:
             "resampleFreq": interval,
         }
 
-        print(f"   [Debug] Crypto API request: {url}")
-        print(f"   [Debug] Params: {params}")
-
         async with session.get(url, params=params) as response:
             if response.status != 200:
                 text = await response.text()
                 raise Exception(f"Tiingo Crypto error {response.status}: {text}")
 
             data = await response.json()
-
-            print(f"   [Debug] Response data length: {len(data) if data else 0}")
-            if data and len(data) > 0:
-                print(f"   [Debug] First ticker: {data[0].get('ticker', 'unknown')}")
-                if "priceData" in data[0]:
-                    print(f"   [Debug] PriceData bars: {len(data[0]['priceData'])}")
 
             if not data:
                 return pd.DataFrame()
