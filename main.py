@@ -33,6 +33,7 @@ from services.agent import GeminiAgent
 from services.telegram import TelegramBot, ENABLE_TESTING_BUTTONS
 from services.logger import terminal_logger, SignalLogger
 from services.time_utils import get_et_now
+from datetime import timedelta
 
 # Conditional import for component testing
 if ENABLE_TESTING_BUTTONS:
@@ -50,13 +51,21 @@ async def strategy_loop() -> None:
     loop_tick = int(os.getenv("STRATEGY_LOOP_TICK", "10"))
     print(f"Strategy loop started (tick: {loop_tick}s, aligned to clock)")
 
+    # Calculate next shutdown time (always the upcoming shutdown, not past)
+    et_now = get_et_now()
+    next_shutdown = et_now.replace(
+        hour=AUTO_SHUTDOWN_HOUR, minute=AUTO_SHUTDOWN_MINUTE, second=0, microsecond=0
+    )
+    if et_now >= next_shutdown:
+        # Already past today's shutdown time, schedule for tomorrow
+        next_shutdown += timedelta(days=1)
+    print(f"📅 Next auto-shutdown: {next_shutdown.strftime('%Y-%m-%d %H:%M')} ET")
+
     while not context.shutdown_event.is_set():
         try:
             # Auto-shutdown check
             et_now = get_et_now()
-            if et_now.hour > AUTO_SHUTDOWN_HOUR or (
-                et_now.hour == AUTO_SHUTDOWN_HOUR and et_now.minute >= AUTO_SHUTDOWN_MINUTE
-            ):
+            if et_now >= next_shutdown:
                 print(f"🛑 Auto-shutdown triggered at {et_now.strftime('%H:%M')} ET")
                 context.log(f"🛑 Auto-shutdown at {et_now.strftime('%H:%M')} ET", "info")
                 context.shutdown_event.set()

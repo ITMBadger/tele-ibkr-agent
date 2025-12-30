@@ -71,7 +71,7 @@ class VectorizedBacktestEngine:
 
         # Map common names to modules
         strategy_map = {
-            "ema_200_long": ("strategies.ema_200_long", "EMA200Long"),
+            "ema_only_long": ("strategies.ema_only_long", "EMAOnlyLong"),
             "ha_mtf_stoch": ("strategies.ha_mtf_stoch", "HAMTFStoch"),
             "strat_multi_toggle": ("strategies.strat_multi_toggle", "StratMultiToggle"),
         }

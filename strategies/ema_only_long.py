@@ -1,8 +1,8 @@
 """
-Strategy 1: 200 EMA Long
+Strategy 1: EMA Only Long (Buy Only)
 
-Buy when price crosses above 200 EMA, sell when crosses below.
-A slower, conservative trend-following strategy.
+Buy when price crosses above EMA. No sell signal - exit via TP/SL only.
+A faster, momentum-based trend-following strategy.
 
 Uses 5min bars by default. EMA period is configurable.
 """
@@ -15,18 +15,18 @@ from strategies._ta import ema
 import context
 
 
-class EMA200Long(BaseStrategy):
-    """Buy above 200 EMA, sell below. Conservative trend following."""
+class EMAOnlyLong(BaseStrategy):
+    """Buy above EMA. Exit via TP/SL only (no sell signal)."""
 
     # === STRATEGY PARAMETERS ===
     ID = "1"
-    NAME = "200 EMA Long"
-    DESCRIPTION = "Buy when price crosses above 200 EMA, sell when crosses below"
+    NAME = "EMA Only Long"
+    DESCRIPTION = "Buy when price crosses above EMA, exit via TP/SL only"
     INTERVAL = 300  # Check every 5 minutes
 
     # Trading parameters
-    EMA_PERIOD = 200
-    QUANTITY = 10
+    EMA_PERIOD = 12
+    QUANTITY = 0.001
 
     # OHLC data parameters
     OHLC_INTERVAL = "5min"  # Bar interval
@@ -44,20 +44,15 @@ class EMA200Long(BaseStrategy):
 
         Signal logic:
         - 1 (BUY): price > EMA
-        - -1 (SELL): price < EMA
-        - 0 (HOLD): during warmup period
+        - 0 (HOLD): price <= EMA or during warmup period
         """
         df = df.copy()
 
         # Calculate EMA
         df["ema"] = ema(df["close"].values, cls.EMA_PERIOD)
 
-        # Generate signals: 1=above EMA (BUY), -1=below EMA (SELL)
-        df["signal"] = np.where(
-            df["close"] > df["ema"],
-            1,
-            np.where(df["close"] < df["ema"], -1, 0),
-        )
+        # Generate signals: 1=above EMA (BUY), 0=below or equal (HOLD)
+        df["signal"] = np.where(df["close"] > df["ema"], 1, 0)
 
         # Handle warmup NaN
         df.loc[df["ema"].isna(), "signal"] = 0
@@ -65,7 +60,7 @@ class EMA200Long(BaseStrategy):
         return cls.finalize_signals(df)
 
     async def execute(self) -> None:
-        """Execute 200 EMA crossover logic using compute_signals()."""
+        """Execute EMA crossover logic using compute_signals()."""
         # Check TP/SL exits first (skip entry logic if position was closed)
         if await self.check_and_close_if_stopped():
             return
@@ -86,11 +81,11 @@ class EMA200Long(BaseStrategy):
 
             # GET SIGNALS (iloc[-1] contains the shifted signal from the completed bar)
             current_signal = int(df["signal"].iloc[-1])
-            
+
             # GET TRIGGER PRICE (iloc[-2] is the finalized close of the signal bar)
             # This ensures slippage checks compare against the backtest-identical price.
             current_price = df["close"].iloc[-2]
-            
+
             ema_value = df["ema"].iloc[-1]
 
             # Prepare indicator columns for logging
@@ -102,7 +97,7 @@ class EMA200Long(BaseStrategy):
             # Update price in context
             context.latest_prices.set(self.symbol, current_price)
 
-            # Execute based on signal
+            # Execute based on signal (BUY ONLY - no sell signal)
             if current_signal == 1 and not self.has_position():
                 self.log(
                     f"🟢 {self.symbol} ${current_price:.2f} > "
@@ -113,20 +108,6 @@ class EMA200Long(BaseStrategy):
                     ohlc_bars=ohlc,
                     indicator_columns=indicator_cols,
                     signal="BUY",
-                    triggered=triggered,
-                    event_type="signal",
-                )
-
-            elif current_signal == -1 and self.has_position():
-                self.log(
-                    f"🔴 {self.symbol} ${current_price:.2f} < "
-                    f"EMA({self.EMA_PERIOD}) ${ema_value:.2f} → SELL"
-                )
-                triggered = self.sell()
-                self.log_strategy_data(
-                    ohlc_bars=ohlc,
-                    indicator_columns=indicator_cols,
-                    signal="SELL",
                     triggered=triggered,
                     event_type="signal",
                 )
@@ -144,4 +125,3 @@ class EMA200Long(BaseStrategy):
 
         except Exception as e:
             print(f"[{self.NAME}] Error for {self.symbol}: {e}")
-

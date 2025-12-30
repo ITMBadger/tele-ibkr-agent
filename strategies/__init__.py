@@ -21,7 +21,7 @@ from typing import Type, Any
 from strategies._base import BaseStrategy
 
 # Import all strategy classes
-from strategies.ema_200_long import EMA200Long
+from strategies.ema_only_long import EMAOnlyLong
 from strategies.ha_mtf_stoch import HAMTFStochEMA
 from strategies.strat_multi_toggle import StratMultiToggle
 
@@ -30,7 +30,7 @@ from strategies.strat_multi_toggle import StratMultiToggle
 # Add new strategies here - this is the ONLY place to register them
 
 STRATEGY_REGISTRY: dict[str, Type[BaseStrategy]] = {
-    "1": EMA200Long,
+    "1": EMAOnlyLong,
     "2": HAMTFStochEMA,
     "999": StratMultiToggle,
 }

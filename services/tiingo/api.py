@@ -70,9 +70,31 @@ class TiingoAPI:
             await self._session.close()
 
     async def _apply_rate_limit(self) -> None:
-        """Apply random delay before API call (1.0 + 0.4-1.4 seconds)."""
-        random_delay = random.choice([0.4, 0.6, 0.8, 1.0, 1.2, 1.4])
-        await asyncio.sleep(1.0 + random_delay)
+        """Apply random delay before API call (1.8 + 0.2-1.2 seconds)."""
+        random_delay = random.choice([0.2, 0.4, 0.6, 0.8, 1.0, 1.2])
+        await asyncio.sleep(1.8 + random_delay)
+
+    def _check_data_freshness(self, df: pd.DataFrame, symbol: str) -> None:
+        """Check if latest bar is in sync with system time."""
+        try:
+            from services.time_utils import get_et_now
+
+            et_now = get_et_now()
+            last_bar_dt = pd.to_datetime(df["date"].iloc[-1]).tz_convert(
+                "America/New_York"
+            )
+
+            delay_seconds = (et_now - last_bar_dt).total_seconds()
+            minute_match = et_now.minute == last_bar_dt.minute
+
+            match_icon = "OK" if minute_match else "LATE"
+            print(
+                f"   [Delay] {symbol}: Last Bar={last_bar_dt.strftime('%H:%M:%S')}, "
+                f"System ET={et_now.strftime('%H:%M:%S')}, Delay={delay_seconds:.1f}s, "
+                f"Min Match={match_icon}"
+            )
+        except Exception:
+            pass
 
     async def fetch_daily(
         self,
@@ -181,27 +203,7 @@ class TiingoAPI:
                 })
 
             df = pd.DataFrame(bars)
-
-            # Check Data Delay for the latest bar
-            try:
-                from services.time_utils import get_et_now
-
-                et_now = get_et_now()
-                last_bar_dt = pd.to_datetime(df["date"].iloc[-1]).tz_convert(
-                    "America/New_York"
-                )
-
-                delay_seconds = (et_now - last_bar_dt).total_seconds()
-                minute_match = et_now.minute == last_bar_dt.minute
-
-                match_icon = "OK" if minute_match else "LATE"
-                print(
-                    f"   [Delay] {symbol}: Last Bar={last_bar_dt.strftime('%H:%M:%S')}, "
-                    f"System ET={et_now.strftime('%H:%M:%S')}, Delay={delay_seconds:.1f}s, "
-                    f"Min Match={match_icon}"
-                )
-            except Exception:
-                pass
+            self._check_data_freshness(df, symbol)
 
             print(
                 f"   [Tiingo] {symbol} {interval}: {len(df)} bars "
@@ -285,6 +287,8 @@ class TiingoAPI:
                 })
 
             df = pd.DataFrame(bars)
+            self._check_data_freshness(df, ticker)
+
             print(
                 f"   [Tiingo Crypto] {ticker} {interval}: {len(df)} bars "
                 f"({start_date.date()} to {end_date.date()})"

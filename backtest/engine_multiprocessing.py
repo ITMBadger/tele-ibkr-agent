@@ -85,7 +85,7 @@ class BacktestEngine:
         strategy_map = {
             "ha_mtf_stoch": ("strategies.ha_mtf_stoch", "HAMTFStoch"),
             "strat_multi_toggle": ("strategies.strat_multi_toggle", "StratMultiToggle"),
-            "ema_200_long": ("strategies.ema_200_long", "EMA200Long"),
+            "ema_only_long": ("strategies.ema_only_long", "EMAOnlyLong"),
         }
 
         if strategy_name in strategy_map:
