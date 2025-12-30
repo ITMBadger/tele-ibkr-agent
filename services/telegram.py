@@ -196,6 +196,16 @@ class TelegramBot:
         print(f"🤔 Processing with AI agent...")
         response = await self.agent.chat(text, chat_id)
 
+        # Filter out thinking text (format: "*Thinking...\n> ...\n\nActual response")
+        if response.startswith("*Thinking...*"):
+            # Find the end of thinking section (double newline)
+            parts = response.split("\n\n", 1)
+            if len(parts) > 1:
+                response = parts[1].strip()
+            else:
+                # Fallback: remove first line if no double newline found
+                response = "\n".join(response.split("\n")[1:]).strip()
+
         # Log response
         response_preview = response[:100] + "..." if len(response) > 100 else response
         print(f"🤖 Bot: {response_preview}")
