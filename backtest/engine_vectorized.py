@@ -51,17 +51,6 @@ class VectorizedBacktestEngine:
         self._df_with_signals: Dict[str, pd.DataFrame] = {}  # Full 1min data with signals
         self._results_dir: Optional[Path] = None
 
-        # Ensure data directories exist
-        self._ensure_directories()
-
-    def _ensure_directories(self):
-        """Create data directories if they don't exist."""
-        for dir_path in [
-            self.config.ohlc_dir,
-            self.config.results_dir,
-        ]:
-            Path(dir_path).mkdir(parents=True, exist_ok=True)
-
     def _get_strategy_class(self) -> Type:
         """Import and return strategy class."""
         if self._strategy_class is not None:
@@ -168,7 +157,7 @@ class VectorizedBacktestEngine:
                     "symbol": symbol,
                     "action": "BUY",
                     "quantity": qty,
-                    "price": round(row["close"], 3),
+                    "price": round(row["close"], 4),
                     "timestamp": ts_str,
                     "bar_index": idx,
                 }
@@ -181,7 +170,7 @@ class VectorizedBacktestEngine:
                             signal_dict[col] = ""
                         elif isinstance(val, bool) or isinstance(val, (int, float)):
                             if isinstance(val, float):
-                                signal_dict[col] = round(val, 3)
+                                signal_dict[col] = round(val, 4)
                             else:
                                 signal_dict[col] = val
                         else:
@@ -363,10 +352,17 @@ class VectorizedBacktestEngine:
 
     def run(self) -> BacktestResult:
         """Run complete vectorized backtest pipeline."""
+        # Ensure OHLC directory exists
+        Path(self.config.ohlc_dir).mkdir(parents=True, exist_ok=True)
+
         # Set up run_id and SignalLogger mode
         run_id = f"vectorized_{get_et_now().strftime('%Y%m%d_%H%M%S')}"
         self._results_dir = Path(self.config.results_dir) / run_id
-        SignalLogger.set_mode("backtest", run_id)
+        
+        if self.config.save_results:
+            self._results_dir.mkdir(parents=True, exist_ok=True)
+            
+        SignalLogger.set_mode("backtest", run_id, create_dir=self.config.save_results)
 
         try:
             # Step 1: Ensure data

@@ -5,6 +5,7 @@ High-level Tiingo service combining cache and API.
 This is the main interface for live trading. It handles:
 - Two-call cache strategy (historical cached, today fresh)
 - Market hours filtering for intraday data
+- Stock split adjustment for accurate historical prices
 - TypedDict return types for type safety
 
 Architecture (3-layer):
@@ -22,6 +23,7 @@ import pandas as pd
 from .api import TiingoAPI
 from .cache import TiingoCache
 from .filters import filter_to_market_hours, format_df_dates
+from .stock_split import fetch_split_data, adjust_for_splits, validate_and_adjust_cache
 from services.time_centralize_utils import get_et_now, get_utc_now
 
 
@@ -90,6 +92,7 @@ class TiingoService:
         days: int,
         interval: str,
         use_cache: bool = True,
+        check_splits: bool = True,
     ) -> pd.DataFrame:
         """
         Two-call cache strategy for OHLC data.
@@ -98,6 +101,10 @@ class TiingoService:
             1. Historical (days ago -> yesterday): Cached permanently
             2. Today: Always fresh, never cached
             3. Merge both results
+
+        Stock splits are handled by:
+            - Validating cache against recent splits (invalidate if split occurred)
+            - Adjusting fresh data for splits before caching
 
         """
         # Use ET time for date boundaries and cache keys
@@ -108,7 +115,7 @@ class TiingoService:
 
         all_dfs: list[pd.DataFrame] = []
 
-        # Detect if this is a crypto symbol
+        # Detect if this is a crypto symbol (crypto doesn't have splits)
         is_crypto = self._is_crypto_symbol(symbol)
 
         # For crypto API: Convert ET to UTC (Tiingo crypto expects UTC timestamps)
@@ -128,8 +135,21 @@ class TiingoService:
         )
 
         historical_df = None
+        cache_valid = True
+
         if use_cache:
             historical_df = self.cache.load(cache_path)
+
+            # Validate cache against stock splits (only for stocks, not crypto)
+            if historical_df is not None and not historical_df.empty and check_splits and not is_crypto:
+                cache_valid, historical_df = await validate_and_adjust_cache(
+                    cache_path, symbol, historical_df, self.api, verbose=True
+                )
+                if not cache_valid:
+                    # Cache invalidated due to split - delete and refetch
+                    print(f"   [Cache] Deleting split-invalidated cache: {cache_path.name}")
+                    cache_path.unlink(missing_ok=True)
+                    historical_df = None
 
         if historical_df is None:
             # Cache miss - fetch from API
@@ -143,6 +163,14 @@ class TiingoService:
                 historical_df = await self.api.fetch_intraday(
                     symbol, start_date_et, yesterday_et, interval=interval
                 )
+
+                # Apply stock split adjustments to fresh data (stocks only)
+                if historical_df is not None and not historical_df.empty and check_splits:
+                    splits_df = await fetch_split_data(
+                        self.api, symbol, start_date_et, yesterday_et, verbose=True
+                    )
+                    if not splits_df.empty:
+                        historical_df = adjust_for_splits(historical_df, splits_df, verbose=True)
 
             # Save to cache (historical data doesn't change)
             if use_cache and historical_df is not None and not historical_df.empty:
@@ -163,6 +191,9 @@ class TiingoService:
             today_df = await self.api.fetch_intraday(
                 symbol, today_et, now_et_naive, interval=interval
             )
+
+            # Note: Today's data typically doesn't need split adjustment
+            # as splits are applied at market open and are reflected immediately
 
         if today_df is not None and not today_df.empty:
             all_dfs.append(today_df)

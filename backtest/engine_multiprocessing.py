@@ -54,22 +54,6 @@ class BacktestEngine:
         self._result: Optional[BacktestResult] = None
         self._results_dir: Optional[Path] = None  # Set before signal generation
 
-        # Ensure data directories exist
-        self._ensure_directories()
-
-    def _ensure_directories(self):
-        """Create data directories if they don't exist."""
-        for dir_path in [
-            self.config.ohlc_dir,
-            self.config.signals_dir,
-            self.config.results_dir,
-        ]:
-            Path(dir_path).mkdir(parents=True, exist_ok=True)
-        print(f"  Data directories ready:")
-        print(f"    OHLC:    {self.config.ohlc_dir}")
-        print(f"    Signals: {self.config.signals_dir}")
-        print(f"    Results: {self.config.results_dir}")
-
     def _get_strategy_class(self) -> Type:
         """Import and return strategy class."""
         if self._strategy_class is not None:
@@ -416,14 +400,22 @@ class BacktestEngine:
 
     def run(self) -> BacktestResult:
         """Run complete backtest pipeline."""
+        # Ensure base directories exist
+        Path(self.config.ohlc_dir).mkdir(parents=True, exist_ok=True)
+        Path(self.config.signals_dir).mkdir(parents=True, exist_ok=True)
+
         # Step 0: Create results directory (needed for debug CSV output during signal generation)
         run_id = get_et_now().strftime("%Y%m%d_%H%M%S")
         self._results_dir = Path(self.config.results_dir) / run_id
-        self._results_dir.mkdir(parents=True, exist_ok=True)
-        print(f"\n[Step 0] Results directory: {self._results_dir}")
+        
+        if self.config.save_results:
+            self._results_dir.mkdir(parents=True, exist_ok=True)
+            print(f"\n[Step 0] Results directory: {self._results_dir}")
+        else:
+            print(f"\n[Step 0] Results directory: (not created, save_results=False)")
 
         # Set SignalLogger to backtest mode
-        SignalLogger.set_mode("backtest", run_id)
+        SignalLogger.set_mode("backtest", run_id, create_dir=self.config.save_results)
 
         try:
             # Step 1: Ensure data

@@ -132,7 +132,7 @@ def save_results(
     if signals:
         signals_path = results_dir / "signals.csv"
         signals_df = pd.DataFrame(signals)
-        signals_df = round_numeric_columns(signals_df, 3)
+        signals_df = round_numeric_columns(signals_df, 4)
         signals_df.to_csv(signals_path, index=False, na_rep="")
         print(f"  Signals saved: {signals_path}")
 

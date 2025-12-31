@@ -239,17 +239,16 @@ class SignalLogger:
     _lock = threading.Lock()
 
     @classmethod
-    def set_mode(cls, mode: str, run_id: str | None = None) -> None:
+    def set_mode(cls, mode: str, run_id: str | None = None, create_dir: bool = True) -> None:
         """
         Set logging mode for the session.
-
         """
         with cls._lock:
             cls._mode = mode
             cls._run_id = run_id
 
-            # Create output directory if in backtest mode
-            if mode == "backtest" and run_id:
+            # Create output directory if in backtest mode and saving is enabled
+            if mode == "backtest" and run_id and create_dir:
                 output_dir = BACKTEST_RESULTS_DIR / run_id
                 output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -301,8 +300,9 @@ class SignalLogger:
 
     def _ensure_output_dir(self) -> None:
         """Ensure output directory exists."""
-        output_dir = self.get_output_dir()
-        output_dir.mkdir(parents=True, exist_ok=True)
+        if self._mode == "live":
+            output_dir = self.get_output_dir()
+            output_dir.mkdir(parents=True, exist_ok=True)
 
     def log_event(
         self,
@@ -325,6 +325,8 @@ class SignalLogger:
         with self._instance_lock:
             try:
                 output_dir = self.get_output_dir()
+                if not output_dir.exists():
+                    return False
 
                 # Generate unique filename for this specific event
                 timestamp = get_et_now().strftime("%Y%m%d_%H%M%S")
@@ -413,6 +415,10 @@ class SignalLogger:
                 import pandas as pd
 
                 output_dir = self.get_output_dir()
+                if not output_dir.exists():
+                    self._backtest_rows.clear()
+                    return None
+
                 filename = f"signal_debug_{self.symbol}.csv"
                 file_path = output_dir / filename
 
@@ -437,6 +443,9 @@ class SignalLogger:
         with self._instance_lock:
             try:
                 output_dir = self.get_output_dir()
+                if not output_dir.exists():
+                    return None
+
                 filename = f"{filename_prefix}_{self.symbol}.csv"
                 file_path = output_dir / filename
 
@@ -463,9 +472,9 @@ class SignalLogger:
         if "date" in df_out.columns:
             df_out["date"] = pd.to_datetime(df_out["date"]).dt.strftime("%Y-%m-%d %H:%M:%S")
 
-        # Round float columns to 3 decimal places
+        # Round float columns to 4 decimal places
         for col in df_out.select_dtypes(include=["float64", "float32"]).columns:
-            df_out[col] = df_out[col].round(3)
+            df_out[col] = df_out[col].round(4)
 
         df_out.to_csv(file_path, index=False)
 
