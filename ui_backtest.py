@@ -34,7 +34,7 @@ load_dotenv(PROJECT_ROOT / ".env")
 
 # Strategy settings
 DEFAULT_STRATEGY = "strat_multi_toggle"
-DEFAULT_SYMBOL = "TQQQ"
+DEFAULT_SYMBOL = "QQQ"
 
 # Date range defaults (calculated from current ET time)
 _now = get_et_now()
@@ -67,18 +67,20 @@ except ImportError as e:
     SIGNALS_CONFIG = {}
     IMPORTED_SIGNAL_DESCRIPTIONS = {}
 
-# EMA 200 signal (kept separate in ui_backtest.py)
-EMA_200_SIGNAL = {
-    "ABOVE_EMA_200": True,  # Price above 200 EMA
+# EMA signals (kept separate in ui_backtest.py)
+EMA_SIGNALS = {
+    "ABOVE_30M_EMA": False,  # Price above 30m EMA
+    "ABOVE_15M_EMA": False,  # Price above 15m EMA
 }
 
-EMA_200_DESCRIPTION = {
-    "ABOVE_EMA_200": "Price above 200 EMA (trend filter)",
+EMA_DESCRIPTIONS = {
+    "ABOVE_30M_EMA": "Price above 30m EMA (trend filter)",
+    "ABOVE_15M_EMA": "Price above 15m EMA (trend filter)",
 }
 
-# Merge imported config with EMA 200
-DEFAULT_SIGNALS = {**SIGNALS_CONFIG, **EMA_200_SIGNAL}
-SIGNAL_DESCRIPTIONS_FULL = {**IMPORTED_SIGNAL_DESCRIPTIONS, **EMA_200_DESCRIPTION}
+# Merge imported config with EMA signals
+DEFAULT_SIGNALS = {**SIGNALS_CONFIG, **EMA_SIGNALS}
+SIGNAL_DESCRIPTIONS_FULL = {**IMPORTED_SIGNAL_DESCRIPTIONS, **EMA_DESCRIPTIONS}
 
 # UI settings
 UI_PORT = 8080
@@ -115,6 +117,7 @@ class AppState:
     # TP/SL override (None = use strategy defaults)
     stop_loss_pct: Optional[float] = DEFAULT_STOP_LOSS_PCT
     take_profit_pct: Optional[float] = DEFAULT_TAKE_PROFIT_PCT
+    use_custom_tp_sl: bool = False  # Use strategy's R-based dynamic TP/SL
 
     # Run state
     running: bool = False
@@ -166,10 +169,16 @@ def run_backtest(
     from backtest import DateRangeEnd
     to_date_value = DateRangeEnd.LATEST if state.to_date == "LATEST" else state.to_date
 
-    # Handle TP/SL: if equal to defaults, pass None to use strategy class defaults
-    # This allows strategies to define their own TP/SL that differ from base class
-    stop_loss_override = None if state.stop_loss_pct == DEFAULT_STOP_LOSS_PCT else state.stop_loss_pct
-    take_profit_override = None if state.take_profit_pct == DEFAULT_TAKE_PROFIT_PCT else state.take_profit_pct
+    # Handle TP/SL:
+    # - If use_custom_tp_sl=True: pass None to use strategy's R-based dynamic TP/SL
+    # - Otherwise: use UI values (None if equal to defaults for strategy class defaults)
+    if state.use_custom_tp_sl:
+        stop_loss_override = None
+        take_profit_override = None
+        log("  TP/SL: Custom R-based (dynamic)")
+    else:
+        stop_loss_override = None if state.stop_loss_pct == DEFAULT_STOP_LOSS_PCT else state.stop_loss_pct
+        take_profit_override = None if state.take_profit_pct == DEFAULT_TAKE_PROFIT_PCT else state.take_profit_pct
 
     config = BacktestConfig(
         symbols=[state.symbol],
@@ -187,8 +196,8 @@ def run_backtest(
     log(f"  Symbol: {state.symbol}")
     log(f"  Period: {config.start_date} to {config.end_date}")
     log(f"  Capital: ${state.initial_capital:,.0f}")
-    # Show TP/SL if overridden from defaults
-    if stop_loss_override is not None or take_profit_override is not None:
+    # Show TP/SL settings (already logged "Custom R-based" above if enabled)
+    if not state.use_custom_tp_sl:
         sl_str = f"{state.stop_loss_pct}%" if stop_loss_override else f"{DEFAULT_STOP_LOSS_PCT}% (default)"
         tp_str = f"{state.take_profit_pct}%" if take_profit_override else f"{DEFAULT_TAKE_PROFIT_PCT}% (default)"
         log(f"  SL: {sl_str}, TP: {tp_str}")
@@ -367,27 +376,56 @@ def create_config_panel():
                 on_change=lambda e: setattr(state, "slippage_pct", float(e.value) / 100),
             ).classes("w-full")
 
-            # Stop Loss %
-            ui.number(
-                label="Stop Loss %",
-                value=state.stop_loss_pct,
-                min=0.1,
-                max=50,
-                step=0.1,
-                format="%.1f",
-                on_change=lambda e: setattr(state, "stop_loss_pct", float(e.value) if e.value is not None else DEFAULT_STOP_LOSS_PCT),
-            ).classes("w-full")
+        # TP/SL Section with custom toggle
+        with ui.card().classes("w-full mt-4 p-4"):
+            with ui.row().classes("w-full items-center justify-between mb-3"):
+                with ui.column().classes("gap-0"):
+                    ui.label("Take Profit / Stop Loss").classes("font-semibold")
+                    ui.label("Use R-based dynamic TP/SL from strategy or fixed percentages").classes("text-xs text-gray-500")
 
-            # Take Profit %
-            ui.number(
-                label="Take Profit %",
-                value=state.take_profit_pct,
-                min=0.1,
-                max=100,
-                step=0.1,
-                format="%.1f",
-                on_change=lambda e: setattr(state, "take_profit_pct", float(e.value) if e.value is not None else DEFAULT_TAKE_PROFIT_PCT),
-            ).classes("w-full")
+                def toggle_custom_tp_sl(e):
+                    state.use_custom_tp_sl = e.value
+                    # Update input states
+                    if e.value:
+                        sl_input.disable()
+                        tp_input.disable()
+                    else:
+                        sl_input.enable()
+                        tp_input.enable()
+
+                ui.switch(
+                    "Custom R-based",
+                    value=state.use_custom_tp_sl,
+                    on_change=toggle_custom_tp_sl,
+                )
+
+            with ui.grid(columns=2).classes("w-full gap-4"):
+                # Stop Loss %
+                sl_input = ui.number(
+                    label="Stop Loss %",
+                    value=state.stop_loss_pct,
+                    min=0.1,
+                    max=50,
+                    step=0.1,
+                    format="%.1f",
+                    on_change=lambda e: setattr(state, "stop_loss_pct", float(e.value) if e.value is not None else DEFAULT_STOP_LOSS_PCT),
+                ).classes("w-full")
+
+                # Take Profit %
+                tp_input = ui.number(
+                    label="Take Profit %",
+                    value=state.take_profit_pct,
+                    min=0.1,
+                    max=100,
+                    step=0.1,
+                    format="%.1f",
+                    on_change=lambda e: setattr(state, "take_profit_pct", float(e.value) if e.value is not None else DEFAULT_TAKE_PROFIT_PCT),
+                ).classes("w-full")
+
+                # Apply initial state
+                if state.use_custom_tp_sl:
+                    sl_input.disable()
+                    tp_input.disable()
 
 
 def create_run_section():
