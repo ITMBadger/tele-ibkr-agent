@@ -53,11 +53,6 @@ def validate_account(account: str | None) -> tuple[bool, str]:
     """
     Validate if account is in allowed list for the active broker.
 
-    Args:
-        account: Account ID to validate
-
-    Returns:
-        (is_valid, error_message)
     """
     allowed = get_allowed_accounts()
     if allowed and account:
@@ -75,11 +70,6 @@ def validate_quantity(quantity: float) -> tuple[bool, str]:
     """
     Validate if quantity is within allowed limit for the active broker.
 
-    Args:
-        quantity: Number of units (shares for stocks, coins for crypto)
-
-    Returns:
-        (is_valid, error_message)
     """
     max_qty = get_max_order_quantity()
     if quantity > max_qty:
@@ -94,12 +84,6 @@ def validate_order_guardrails(account: str | None, quantity: float) -> tuple[boo
     """
     Validate order against all hardcoded guardrails.
 
-    Args:
-        account: Account ID
-        quantity: Number of units (shares for stocks, coins for crypto)
-
-    Returns:
-        (is_valid, error_message) - if is_valid is False, error_message explains why
     """
     # Check account
     is_valid, error_msg = validate_account(account)

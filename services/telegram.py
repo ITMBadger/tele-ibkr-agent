@@ -46,8 +46,6 @@ class TelegramBot:
         """
         Initialize the Telegram bot.
 
-        Args:
-            agent: GeminiAgent instance for processing messages
         """
         self.token = os.getenv("TELEGRAM_BOT_TOKEN")
         if not self.token:

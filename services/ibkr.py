@@ -228,12 +228,6 @@ class IBKRService(BrokerInterface, EWrapper, EClient):
 
         Uses reqMktData in streaming mode, captures first tick, then cancels.
 
-        Args:
-            symbol: Stock symbol
-            timeout: Max time to wait for price
-
-        Returns:
-            Market price or None if unavailable
         """
         req_id = self._price_req_id_base + self._price_req_counter
         self._price_req_counter += 1

@@ -17,12 +17,6 @@ def format_df_dates(df: pd.DataFrame, date_column: str = "date") -> pd.DataFrame
     """
     Convert DataFrame date column to naive ET string format.
 
-    Args:
-        df: DataFrame with datetime column
-        date_column: Name of the date column
-
-    Returns:
-        DataFrame with dates formatted as naive ET strings
     """
     df = df.copy()
 
@@ -58,12 +52,6 @@ def filter_to_market_hours(df: pd.DataFrame) -> pd.DataFrame:
     Removes pre-market, after-hours, holidays, and early close data.
     Uses NYSE calendar from pandas-market-calendars.
 
-    Args:
-        df: DataFrame with 'date' column (or datetime index)
-            Must have timezone-aware or UTC timestamps
-
-    Returns:
-        DataFrame filtered to market hours only, with reset index
     """
     if df.empty:
         return df

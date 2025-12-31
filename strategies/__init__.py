@@ -40,11 +40,6 @@ def get_strategy(strategy_id: str) -> Type[BaseStrategy] | None:
     """
     Get a strategy class by ID.
     
-    Args:
-        strategy_id: Strategy ID (e.g., "1", "2", "3")
-        
-    Returns:
-        Strategy class if found, None otherwise
     """
     return STRATEGY_REGISTRY.get(strategy_id)
 
@@ -53,8 +48,6 @@ def list_strategies() -> list[Type[BaseStrategy]]:
     """
     Get all available strategy classes.
     
-    Returns:
-        List of strategy classes sorted by ID
     """
     return [
         cls for _, cls in 
@@ -66,13 +59,6 @@ def create_strategy(strategy_id: str, symbol: str, tiingo: Any) -> BaseStrategy 
     """
     Create a strategy instance.
     
-    Args:
-        strategy_id: Strategy ID
-        symbol: Stock symbol to trade
-        tiingo: TiingoService instance
-        
-    Returns:
-        Strategy instance if found, None otherwise
     """
     strategy_class = get_strategy(strategy_id)
     if strategy_class is None:
@@ -84,8 +70,6 @@ def format_strategy_list() -> str:
     """
     Format all strategies as a readable list for Telegram display.
     
-    Returns:
-        Multi-line string with all strategies
     """
     lines = ["📋 **Available Strategies**", ""]
     

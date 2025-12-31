@@ -52,12 +52,6 @@ def check_slippage(symbol: str, timeout: float = 5.0) -> tuple[bool, str, float 
 
     Works for both IBKR (stocks) and Hyperliquid (crypto).
 
-    Args:
-        symbol: Stock/crypto symbol (e.g., "QQQ" or "BTC")
-        timeout: Max time to wait for broker price (seconds)
-
-    Returns:
-        (is_ok, error_message, slippage_pct, trigger_price, broker_price)
     """
     # === STEP 1: Get trigger price (cached or fresh) ===
     trigger_price = context.latest_prices.get(symbol)
@@ -169,16 +163,6 @@ def submit_order(
 
     This is the SINGLE ENTRY POINT for all orders. All guardrails are enforced here.
 
-    Args:
-        symbol: Stock symbol (e.g., "QQQ")
-        action: "BUY" or "SELL"
-        quantity: Number of shares
-        order_type: "MKT" or "LMT"
-        limit_price: Required if order_type is "LMT"
-        strategy_id: Strategy ID for position tracking (default "manual")
-
-    Returns:
-        True if order was submitted, False if blocked by guardrails.
     """
     # Validate against guardrails (account, quantity)
     is_valid, error_msg = guardrails.validate_order_guardrails(

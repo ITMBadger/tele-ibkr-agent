@@ -141,8 +141,6 @@ class TerminalLogger:
         """
         Start capturing terminal output.
 
-        Returns:
-            Path to the log file
         """
         if self._started:
             return self._session_file
@@ -245,9 +243,6 @@ class SignalLogger:
         """
         Set logging mode for the session.
 
-        Args:
-            mode: "live" or "backtest"
-            run_id: Required for backtest mode (e.g., "20240115_143022")
         """
         with cls._lock:
             cls._mode = mode
@@ -321,17 +316,6 @@ class SignalLogger:
         """
         Log OHLC data with indicators to CSV (for live mode).
 
-        Args:
-            ohlc_bars: List of OHLC dicts with keys: date, open, high, low, close, volume
-            indicator_columns: Dict mapping column name to list of values
-            signal: Signal type ("BUY", "SELL", "HOLD", etc.)
-            triggered: Whether order was actually submitted
-            event_type: "signal" (on trigger) or "periodic" (30-min snapshot)
-            row_index: Index of the bar that triggered the signal. Supports negative
-                       indexing (e.g., -2 for completed bar, -1 for current bar).
-
-        Returns:
-            bool: True if logged successfully
         """
         if not ohlc_bars:
             return False
@@ -412,8 +396,6 @@ class SignalLogger:
 
         Accumulates rows in memory, call flush() to write to disk.
 
-        Args:
-            row_dict: Dictionary with bar data (from df.iloc[-1].to_dict())
         """
         with self._instance_lock:
             self._backtest_rows.append(row_dict.copy())
@@ -422,8 +404,6 @@ class SignalLogger:
         """
         Write accumulated backtest rows to CSV.
 
-        Returns:
-            Path to the saved file, or None if no rows to write
         """
         with self._instance_lock:
             if not self._backtest_rows:
@@ -453,12 +433,6 @@ class SignalLogger:
         """
         Log entire DataFrame to CSV (for vectorized backtest).
 
-        Args:
-            df: pandas DataFrame with signal data
-            filename_prefix: Prefix for the output filename
-
-        Returns:
-            Path to the saved file
         """
         with self._instance_lock:
             try:
@@ -480,9 +454,6 @@ class SignalLogger:
         """
         Save DataFrame to CSV with proper formatting.
 
-        Args:
-            df: pandas DataFrame
-            file_path: Output file path
         """
         import pandas as pd
 

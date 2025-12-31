@@ -192,12 +192,6 @@ class StrategyTemplate(BaseStrategy):
         """
         Calculate 5min indicators.
 
-        Args:
-            df: 5min OHLC data (may be HA-converted if use_ha=True)
-
-        Returns:
-            Tuple of (df with indicators, list of column names to merge to 1min)
-
         Example:
             df["ema"] = ema(df["close"].values, 12)
             return df, ["ema"]
@@ -223,12 +217,6 @@ class StrategyTemplate(BaseStrategy):
     def get_signal_vector(cls, df: pd.DataFrame) -> np.ndarray:
         """
         Generate signals (vectorized) on merged 1min data.
-
-        Args:
-            df: 1min data with all indicators merged
-
-        Returns:
-            numpy array or pandas Series of signals (1=BUY, 0=HOLD)
 
         Example:
             return np.where(df["close"] > df["ema"], 1, 0)

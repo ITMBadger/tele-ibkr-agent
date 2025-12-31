@@ -58,8 +58,6 @@ class BrokerInterface(ABC):
         """
         Start the broker service in a background thread.
 
-        Returns:
-            threading.Thread: The started thread
         """
         pass
 
@@ -76,16 +74,6 @@ class BrokerInterface(ABC):
         """
         Place an order with the broker.
 
-        Args:
-            symbol: Trading symbol (e.g., "QQQ" for stocks, "BTCUSDT" for crypto)
-            action: "BUY" or "SELL"
-            quantity: Number of units (can be fractional for crypto)
-            order_type: "MKT" (market) or "LMT" (limit)
-            limit_price: Required if order_type is "LMT"
-            strategy_id: Strategy ID for position tracking
-
-        Returns:
-            Order ID or None if failed
         """
         pass
 
@@ -96,12 +84,6 @@ class BrokerInterface(ABC):
 
         Used for slippage checks before order execution.
 
-        Args:
-            symbol: Trading symbol
-            timeout: Max wait time in seconds
-
-        Returns:
-            Current market price or None if unavailable
         """
         pass
 
@@ -110,11 +92,6 @@ class BrokerInterface(ABC):
         """
         Switch to a different trading account.
 
-        Args:
-            account_id: Account identifier
-
-        Returns:
-            True if successful, False otherwise
         """
         pass
 

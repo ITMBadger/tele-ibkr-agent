@@ -352,16 +352,6 @@ class HyperliquidService(BrokerInterface):
         """
         Place an order with Hyperliquid.
 
-        Args:
-            symbol: Trading symbol (e.g., "BTC", "ETH")
-            action: "BUY" or "SELL"
-            quantity: Amount to trade
-            order_type: "MKT" or "LMT"
-            limit_price: Required for limit orders
-            strategy_id: Strategy ID for tracking
-
-        Returns:
-            Order ID or None if failed
         """
         if not self._connected or not self._exchange:
             context.log("Cannot place order: not connected", "error")
@@ -505,12 +495,6 @@ class HyperliquidService(BrokerInterface):
         """
         Get market price synchronously.
 
-        Args:
-            symbol: Trading symbol (e.g., "BTC", "ETH")
-            timeout: Max wait time (not really used - API is fast)
-
-        Returns:
-            Current mid price or None
         """
         if not self._connected or not self._info:
             return None

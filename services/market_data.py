@@ -67,9 +67,6 @@ class TiingoDataProvider(MarketDataProvider):
 
     def __init__(self, tiingo_service, crypto_mode: bool = False):
         """
-        Args:
-            tiingo_service: TiingoService instance
-            crypto_mode: If True, auto-translate symbols (BTC → BTCUSD)
         """
         self.tiingo = tiingo_service
         self.crypto_mode = crypto_mode
@@ -167,11 +164,6 @@ class HyperliquidDataProvider(MarketDataProvider):
         """
         Fetch OHLC from Hyperliquid.
 
-        Args:
-            symbol: Trading symbol (e.g., "BTC", "ETH")
-            days: Number of days of history
-            interval: Bar interval ("1min", "5min", etc.)
-            use_cache: Ignored for now
         """
         hl_interval = self.INTERVAL_MAP.get(interval, "5m")
 

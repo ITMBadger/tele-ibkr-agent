@@ -44,8 +44,6 @@ class TiingoAPI:
         """
         Initialize API client.
 
-        Args:
-            api_key: Tiingo API key (defaults to TIINGO_API_KEY env var)
         """
         self.api_key = api_key or os.getenv("TIINGO_API_KEY")
         if not self.api_key:
@@ -103,13 +101,6 @@ class TiingoAPI:
         """
         Fetch daily OHLC data.
 
-        Args:
-            symbol: Stock symbol
-            start_date: Start date
-            end_date: End date
-
-        Returns:
-            DataFrame with columns: date, open, high, low, close, volume
         """
         await self._apply_rate_limit()
 
@@ -159,14 +150,6 @@ class TiingoAPI:
         """
         Fetch intraday OHLC data.
 
-        Args:
-            symbol: Stock symbol
-            start_date: Start date
-            end_date: End date
-            interval: Bar interval ("1min", "5min", "15min", "30min", "1hour")
-
-        Returns:
-            DataFrame with columns: date, open, high, low, close, volume
         """
         await self._apply_rate_limit()
 
@@ -224,14 +207,6 @@ class TiingoAPI:
 
         Uses Tiingo crypto endpoint which has different format than IEX.
 
-        Args:
-            ticker: Crypto ticker (e.g., "btcusd", "ethusd")
-            start_date: Start date
-            end_date: End date
-            interval: Bar interval ("1min", "5min", "15min", "30min", "1hour")
-
-        Returns:
-            DataFrame with columns: date, open, high, low, close, volume
         """
         await self._apply_rate_limit()
 
@@ -302,14 +277,6 @@ class TiingoAPI:
 
         Downloads month by month to handle large date ranges.
 
-        Args:
-            symbol: Stock symbol
-            start_date: Start date (YYYY-MM-DD)
-            end_date: End date (YYYY-MM-DD)
-            interval: Bar interval
-
-        Returns:
-            DataFrame with all bars combined
         """
         from dateutil.relativedelta import relativedelta
 
@@ -409,14 +376,6 @@ class TiingoAPI:
         """
         Get the latest price for a symbol.
 
-        Args:
-            symbol: Stock symbol
-
-        Returns:
-            Latest price
-
-        Raises:
-            Exception: If no price data available
         """
         await self._apply_rate_limit()
 

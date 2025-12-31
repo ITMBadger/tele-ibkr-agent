@@ -137,13 +137,6 @@ def calculate_direction_stats(
     """
     Calculate statistics for a set of trades.
 
-    Args:
-        trades: List of Trade objects
-        equity_curve: Equity curve DataFrame with 'Equity' column
-        starting_capital: Initial capital
-
-    Returns:
-        DirectionStats with all calculated metrics
     """
     stats = DirectionStats()
     stats.final_equity = starting_capital
@@ -231,11 +224,6 @@ def calculate_monthly_returns(equity_series: pd.Series) -> pd.DataFrame:
     """
     Calculate monthly returns from equity series.
 
-    Args:
-        equity_series: Series with DatetimeIndex and equity values
-
-    Returns:
-        DataFrame with Return, Year, Month columns
     """
     if equity_series.empty:
         return pd.DataFrame()
@@ -262,14 +250,6 @@ def build_separate_equity_curve(
     """
     Build equity curve for a subset of trades (e.g., only longs or only shorts).
 
-    Args:
-        trades: List of Trade objects
-        n_bars: Total number of bars
-        index: DatetimeIndex for the curve
-        starting_capital: Initial capital
-
-    Returns:
-        DataFrame with Equity column
     """
     if not trades:
         return pd.DataFrame()
@@ -297,16 +277,6 @@ def build_backtest_result(
     """
     Build complete BacktestResult from simulation output.
 
-    Args:
-        config: BacktestConfig
-        trades: List of Trade objects
-        equity_curve: Equity curve DataFrame with DatetimeIndex
-        starting_capital: Initial capital
-        symbol: Symbol name
-        timeframe: Timeframe string
-
-    Returns:
-        BacktestResult with all statistics calculated
     """
     # Split trades by direction
     long_trades = [t for t in trades if t.direction == TradeDirection.LONG]

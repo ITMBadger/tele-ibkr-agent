@@ -60,18 +60,6 @@ class VirtualAccount:
         """
         Open a new position.
 
-        Args:
-            symbol: Stock symbol
-            quantity: Number of shares
-            price: Market price at signal
-            timestamp: Time of entry
-            side: LONG or SHORT
-            slippage_pct: Slippage percentage to apply
-            take_profit: Take profit price (absolute)
-            stop_loss: Stop loss price (absolute)
-
-        Returns:
-            True if position opened successfully
         """
         if symbol in self.positions:
             return False  # Already have position
@@ -115,15 +103,6 @@ class VirtualAccount:
         """
         Close an existing position.
 
-        Args:
-            symbol: Stock symbol
-            price: Market price at signal
-            timestamp: Time of exit
-            reason: Exit reason (SIGNAL, TAKE_PROFIT, STOP_LOSS)
-            slippage_pct: Slippage percentage to apply
-
-        Returns:
-            Trade object if closed, None if no position
         """
         if symbol not in self.positions:
             return None
@@ -162,11 +141,6 @@ class VirtualAccount:
         """
         Calculate total value of open positions.
 
-        Args:
-            prices: Dict of symbol -> current price
-
-        Returns:
-            Total positions value
         """
         total = 0.0
         for symbol, position in self.positions.items():
@@ -182,11 +156,6 @@ class VirtualAccount:
         """
         Calculate total account equity.
 
-        Args:
-            prices: Dict of symbol -> current price
-
-        Returns:
-            Total equity (cash + positions value)
         """
         return self.cash + self.get_positions_value(prices)
 
@@ -199,13 +168,6 @@ class VirtualAccount:
         """
         Check all open positions for TP/SL triggers and close if hit.
 
-        Args:
-            prices: Dict of symbol -> current price
-            timestamp: Current timestamp
-            slippage_pct: Slippage to apply on exit
-
-        Returns:
-            List of trades that were closed
         """
         closed_trades = []
         symbols_to_close = []
@@ -245,9 +207,6 @@ class VirtualAccount:
         """
         Record current equity to equity curve.
 
-        Args:
-            timestamp: Current timestamp
-            prices: Dict of symbol -> current price
         """
         positions_value = self.get_positions_value(prices)
         total_equity = self.cash + positions_value

@@ -47,9 +47,9 @@ DEFAULT_INITIAL_CAPITAL = 100_000.0
 DEFAULT_SLIPPAGE_PCT = 0.0002  # 0.02%
 DEFAULT_COMMISSION_PER_TRADE = 0.5
 
-# TP/SL (None = use strategy defaults from _trading_mech.py)
-DEFAULT_STOP_LOSS_PCT = None  # e.g., 1.0 for 1%
-DEFAULT_TAKE_PROFIT_PCT = None  # e.g., 2.0 for 2%
+# TP/SL (matching strategy defaults from _trading_mech.py BaseStrategy)
+DEFAULT_STOP_LOSS_PCT = 1.0  # 1% stop loss
+DEFAULT_TAKE_PROFIT_PCT = 2.0  # 2% take profit
 
 # Backtest mode
 DEFAULT_MODE = "vectorized"  # "vectorized" or "multiprocessing"
@@ -151,15 +151,6 @@ def run_backtest(
 
     Dynamically patches StratMultiToggle.ENABLED_BUY_SIGNALS before run.
 
-    Args:
-        state: Current UI state with all settings
-        on_progress: Optional callback for progress updates
-
-    Returns:
-        Path to results directory (contains dashboard HTML)
-
-    Raises:
-        Exception: If backtest fails
     """
     from backtest import BacktestConfig, BacktestEngine, VectorizedBacktestEngine
     from strategies.strat_multi_toggle import StratMultiToggle, SignalType
@@ -175,6 +166,11 @@ def run_backtest(
     from backtest import DateRangeEnd
     to_date_value = DateRangeEnd.LATEST if state.to_date == "LATEST" else state.to_date
 
+    # Handle TP/SL: if equal to defaults, pass None to use strategy class defaults
+    # This allows strategies to define their own TP/SL that differ from base class
+    stop_loss_override = None if state.stop_loss_pct == DEFAULT_STOP_LOSS_PCT else state.stop_loss_pct
+    take_profit_override = None if state.take_profit_pct == DEFAULT_TAKE_PROFIT_PCT else state.take_profit_pct
+
     config = BacktestConfig(
         symbols=[state.symbol],
         strategy=state.strategy,
@@ -183,17 +179,18 @@ def run_backtest(
         initial_capital=state.initial_capital,
         slippage_pct=state.slippage_pct,
         commission_per_trade=state.commission_per_trade,
-        stop_loss_pct=state.stop_loss_pct,
-        take_profit_pct=state.take_profit_pct,
+        stop_loss_pct=stop_loss_override,
+        take_profit_pct=take_profit_override,
         save_results=state.save_results,
         hide_signals=state.hide_signals,
     )
     log(f"  Symbol: {state.symbol}")
     log(f"  Period: {config.start_date} to {config.end_date}")
     log(f"  Capital: ${state.initial_capital:,.0f}")
-    if state.stop_loss_pct or state.take_profit_pct:
-        sl_str = f"{state.stop_loss_pct}%" if state.stop_loss_pct else "default"
-        tp_str = f"{state.take_profit_pct}%" if state.take_profit_pct else "default"
+    # Show TP/SL if overridden from defaults
+    if stop_loss_override is not None or take_profit_override is not None:
+        sl_str = f"{state.stop_loss_pct}%" if stop_loss_override else f"{DEFAULT_STOP_LOSS_PCT}% (default)"
+        tp_str = f"{state.take_profit_pct}%" if take_profit_override else f"{DEFAULT_TAKE_PROFIT_PCT}% (default)"
         log(f"  SL: {sl_str}, TP: {tp_str}")
 
     # Step 2: Create engine and load strategy class
@@ -370,27 +367,27 @@ def create_config_panel():
                 on_change=lambda e: setattr(state, "slippage_pct", float(e.value) / 100),
             ).classes("w-full")
 
-            # Stop Loss % (empty = use strategy default)
+            # Stop Loss %
             ui.number(
-                label="Stop Loss % (empty=default)",
+                label="Stop Loss %",
                 value=state.stop_loss_pct,
                 min=0.1,
                 max=50,
                 step=0.1,
                 format="%.1f",
-                on_change=lambda e: setattr(state, "stop_loss_pct", float(e.value) if e.value else None),
-            ).classes("w-full").props('clearable')
+                on_change=lambda e: setattr(state, "stop_loss_pct", float(e.value) if e.value is not None else DEFAULT_STOP_LOSS_PCT),
+            ).classes("w-full")
 
-            # Take Profit % (empty = use strategy default)
+            # Take Profit %
             ui.number(
-                label="Take Profit % (empty=default)",
+                label="Take Profit %",
                 value=state.take_profit_pct,
                 min=0.1,
                 max=100,
                 step=0.1,
                 format="%.1f",
-                on_change=lambda e: setattr(state, "take_profit_pct", float(e.value) if e.value else None),
-            ).classes("w-full").props('clearable')
+                on_change=lambda e: setattr(state, "take_profit_pct", float(e.value) if e.value is not None else DEFAULT_TAKE_PROFIT_PCT),
+            ).classes("w-full")
 
 
 def create_run_section():

@@ -76,12 +76,6 @@ class BaseStrategy(ABC):
         """
         Initialize strategy with symbol and data service.
 
-        Args:
-            symbol: Stock symbol to trade (e.g., "QQQ" for stocks, "BTCUSDT" for crypto)
-            tiingo: Market data service (TiingoService or BinanceDataProvider)
-            time_provider: Optional callable returning current time (for backtesting)
-            order_handler: Optional callable to handle orders (for backtesting)
-            position_checker: Optional callable to check position (for backtesting)
         """
         self.symbol = self._normalize_symbol(symbol)
         self.tiingo = tiingo
@@ -116,15 +110,6 @@ class BaseStrategy(ABC):
         This is the core signal logic shared by live trading and backtesting.
         The method should be pure (no side effects, no position tracking).
 
-        Args:
-            df: DataFrame with columns: date, open, high, low, close, volume
-                Must be sorted by date ascending.
-
-        Returns:
-            Same DataFrame with additional columns:
-            - 'signal': 1=BUY, -1=SELL, 0=HOLD
-            - Indicator columns (e.g., 'ema', 'rsi') for debugging/logging
-
         Note:
             - Position management is handled by the caller
             - Early rows may have NaN/0 signals due to indicator warmup
@@ -141,9 +126,6 @@ class BaseStrategy(ABC):
 
         Call this in execute() after compute_signals() to enable bar-by-bar
         debug CSV export during backtesting. Uses SignalLogger in backtest mode.
-
-        Args:
-            df: DataFrame returned by compute_signals() with all indicator columns
 
         Example usage in execute():
             df = self.compute_signals(df)
@@ -285,14 +267,6 @@ class BaseStrategy(ABC):
         """
         Open a LONG position with tracking.
 
-        Args:
-            quantity: Number of units (uses QUANTITY if None)
-            entry_price: Entry price for tracking (auto-calculates TP/SL if provided)
-            take_profit: Take profit price (auto-calculated from % if None and entry_price provided)
-            stop_loss: Stop loss price (auto-calculated from % if None and entry_price provided)
-
-        Returns:
-            bool: True if order submitted successfully
         """
         qty = quantity or self.QUANTITY
 
@@ -335,14 +309,6 @@ class BaseStrategy(ABC):
         """
         Open a SHORT position with tracking.
 
-        Args:
-            quantity: Number of units (uses QUANTITY if None)
-            entry_price: Entry price for tracking (auto-calculates TP/SL if provided)
-            take_profit: Take profit price (auto-calculated from % if None and entry_price provided)
-            stop_loss: Stop loss price (auto-calculated from % if None and entry_price provided)
-
-        Returns:
-            bool: True if order submitted successfully
         """
         qty = quantity or self.QUANTITY
 
@@ -381,11 +347,6 @@ class BaseStrategy(ABC):
 
         Automatically determines if LONG (sell) or SHORT (buy to cover).
 
-        Args:
-            quantity: Number of units to close (all if None)
-
-        Returns:
-            bool: True if order submitted successfully
         """
         # In backtest mode, delegate to order handler
         if self._order_handler:
@@ -432,12 +393,6 @@ class BaseStrategy(ABC):
         """
         Update take profit and/or stop loss for tracked position.
 
-        Args:
-            take_profit: New take profit price
-            stop_loss: New stop loss price
-
-        Returns:
-            bool: True if updated successfully
         """
         updates = {}
         if take_profit is not None:
@@ -454,11 +409,6 @@ class BaseStrategy(ABC):
         """
         Check if take profit should trigger.
 
-        Args:
-            current_price: Current market price
-
-        Returns:
-            bool: True if TP should trigger
         """
         tracked = self.get_tracked_position()
         if not tracked:
@@ -479,11 +429,6 @@ class BaseStrategy(ABC):
         """
         Check if stop loss should trigger.
 
-        Args:
-            current_price: Current market price
-
-        Returns:
-            bool: True if SL should trigger
         """
         tracked = self.get_tracked_position()
         if not tracked:
@@ -504,12 +449,6 @@ class BaseStrategy(ABC):
         """
         Calculate TP and SL prices from percentages.
 
-        Args:
-            entry_price: Entry price for the position
-            direction: "LONG" or "SHORT"
-
-        Returns:
-            Tuple of (tp_price, sl_price)
         """
         if direction == "LONG":
             tp = entry_price * (1 + self.TAKE_PROFIT_PCT / 100)
@@ -523,11 +462,6 @@ class BaseStrategy(ABC):
         """
         Check if TP or SL should trigger.
 
-        Args:
-            current_price: Current market price
-
-        Returns:
-            "TP" if take profit triggered, "SL" if stop loss triggered, None otherwise
         """
         # Check SL first (risk management priority)
         if self.check_stop_loss(current_price):
@@ -541,8 +475,6 @@ class BaseStrategy(ABC):
         Check TP/SL and close position if triggered.
         Call this at start of execute() before entry logic.
 
-        Returns:
-            bool: True if position was closed (skip entry logic)
         """
         if not self.is_tracked():
             return False
@@ -582,12 +514,6 @@ class BaseStrategy(ABC):
 
         Override this method for complex exit logic using indicators.
 
-        Args:
-            position: Dict with entry_price, direction, tp_price, sl_price
-            bar_data: Dict with high, low, open, close + any indicator values
-
-        Returns:
-            None if no exit, or dict with {price, status, reason}
         """
         # Use shared exit logic from services/exits.py
         return check_exit(
@@ -656,13 +582,6 @@ class BaseStrategy(ABC):
         Uses self.TRIGGER_BAR_INDEX to determine which bar triggered the signal.
         This ensures logging reflects the exact bar the strategy acted on.
 
-        Args:
-            ohlc_bars: Full OHLC data (all bars used for calculation)
-            indicator_columns: Dict of indicator name -> list of values per bar
-                               e.g., {"ema_200": [val1, val2, ...]}
-            signal: "BUY", "SELL", "HOLD", or "" for no signal
-            triggered: Whether an order was actually placed
-            event_type: "signal" or "periodic"
         """
         # Skip logging in backtest mode (when order_handler is set)
         if self._order_handler:

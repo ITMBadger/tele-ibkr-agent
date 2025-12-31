@@ -16,12 +16,6 @@ def _normalize_dates_to_naive_et(df: pd.DataFrame, date_column: str = "date") ->
     - If timezone-aware: convert to ET, then strip timezone
     - If naive: assume already ET (project standard)
 
-    Args:
-        df: DataFrame with date column
-        date_column: Name of the date column
-
-    Returns:
-        DataFrame with naive ET dates
     """
     df = df.copy()
     dates = pd.to_datetime(df[date_column])
@@ -59,14 +53,6 @@ class SimulatedBroker:
         """
         Initialize simulated broker.
 
-        Args:
-            initial_capital: Starting capital
-            slippage_pct: Slippage percentage (0.001 = 0.1%)
-            commission_per_trade: Commission per trade in dollars
-            position_size_pct: Percentage of capital to use per trade
-            strategy_class: Strategy class to get TP/SL from class attributes
-            stop_loss_pct: Override stop loss % (None = use strategy default)
-            take_profit_pct: Override take profit % (None = use strategy default)
         """
         self.initial_capital = initial_capital
         self.slippage_pct = slippage_pct
@@ -105,13 +91,6 @@ class SimulatedBroker:
         Supports both LONG (BUY) and SHORT (SELL) signals.
         Uses strategy's exit_check() method for complex exit logic.
 
-        Args:
-            signals: List of signal dicts with keys: timestamp, action, symbol, price, quantity
-            ohlc_df: OHLC DataFrame with columns: date, open, high, low, close
-            indicator_df: Optional DataFrame with all indicators (for complex exit logic)
-
-        Returns:
-            Dict with trades, equity_curve DataFrame (DatetimeIndex), final_equity, etc.
         """
         if not signals:
             return self._empty_results(ohlc_df)
@@ -401,12 +380,6 @@ class SimulatedBroker:
 
         Uses shared exit logic from services/exits.py.
 
-        Args:
-            position: Dict with entry_price, direction, tp_price, sl_price
-            bar_data: Dict with high, low, open, close
-
-        Returns:
-            None if no exit, or dict with {price, status, reason}
         """
         return check_exit(
             direction=position.get("direction", "LONG"),
@@ -437,19 +410,6 @@ def run_simulation(
     """
     Convenience function to run simulation.
 
-    Args:
-        signals: List of signal dicts
-        ohlc_df: OHLC DataFrame
-        initial_capital: Starting capital
-        slippage_pct: Slippage percentage
-        commission_per_trade: Commission per trade
-        position_size_pct: Percentage of capital per trade
-
-        strategy_class: Strategy class to get TP/SL from (optional)
-        indicator_df: DataFrame with indicators for complex exit logic (optional)
-
-    Returns:
-        Simulation results dict
     """
     broker = SimulatedBroker(
         initial_capital=initial_capital,

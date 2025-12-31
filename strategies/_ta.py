@@ -39,11 +39,6 @@ def heikin_ashi_vectorized(df: pd.DataFrame) -> pd.DataFrame:
         HA_High  = max(H, HA_Open, HA_Close)
         HA_Low   = min(L, HA_Open, HA_Close)
 
-    Args:
-        df: DataFrame with 'open', 'high', 'low', 'close' columns
-
-    Returns:
-        Same DataFrame with added 'ha_open', 'ha_high', 'ha_low', 'ha_close' columns
     """
     df = df.copy()
 
@@ -98,8 +93,6 @@ def stochastic(
     """
     Stochastic Oscillator.
 
-    Returns:
-        (slowk, slowd) arrays
     """
     slowk, slowd = talib.STOCH(
         np.array(highs, dtype=float),
@@ -123,8 +116,6 @@ def bbands(
     """
     Bollinger Bands.
 
-    Returns:
-        (upper, middle, lower) arrays
     """
     return talib.BBANDS(
         np.array(closes, dtype=float),

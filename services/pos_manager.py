@@ -46,8 +46,6 @@ def load_positions() -> dict:
     """
     Load positions from JSON file.
 
-    Returns:
-        dict: Positions data or empty structure if file doesn't exist
     """
     if not POSITIONS_FILE.exists():
         return _empty_data()
@@ -65,11 +63,6 @@ def save_positions(data: dict) -> bool:
     """
     Save positions to JSON file.
 
-    Args:
-        data: Positions data structure
-
-    Returns:
-        bool: True if saved successfully
     """
     try:
         # Ensure data directory exists
@@ -89,8 +82,6 @@ def clear_all_positions() -> bool:
     """
     Clear all position records from JSON.
 
-    Returns:
-        bool: True if cleared successfully
     """
     return save_positions(_empty_data())
 
@@ -110,18 +101,6 @@ def save_position(
     """
     Save a new position record after entry.
 
-    Args:
-        symbol: Stock symbol (e.g., "QQQ")
-        account: IBKR account ID
-        strategy_id: Strategy ID that opened this position
-        action: "LONG" or "SHORT"
-        quantity: Number of shares
-        entry_price: Entry price (optional, can be updated later)
-        take_profit: Take profit price (optional)
-        stop_loss: Stop loss price (optional)
-
-    Returns:
-        bool: True if saved successfully
     """
     data = load_positions()
     key = _get_position_key(account, symbol)
@@ -150,12 +129,6 @@ def remove_position(symbol: str, account: str | None = None) -> bool:
     """
     Remove a position record after exit.
 
-    Args:
-        symbol: Stock symbol
-        account: IBKR account ID (uses current_account if None)
-
-    Returns:
-        bool: True if removed successfully
     """
     acc = account or context.current_account
     if not acc:
@@ -180,12 +153,6 @@ def get_position(symbol: str, account: str | None = None) -> dict | None:
     """
     Get a position record.
 
-    Args:
-        symbol: Stock symbol
-        account: IBKR account ID (uses current_account if None)
-
-    Returns:
-        dict: Position data or None if not found
     """
     acc = account or context.current_account
     if not acc:
@@ -201,8 +168,6 @@ def get_all_positions() -> dict[str, dict]:
     """
     Get all position records.
 
-    Returns:
-        dict: All positions keyed by "account:symbol"
     """
     data = load_positions()
     return data.get("positions", {})
@@ -216,13 +181,6 @@ def update_position(
     """
     Update fields on an existing position.
 
-    Args:
-        symbol: Stock symbol
-        account: IBKR account ID (uses current_account if None)
-        **updates: Fields to update (entry_price, take_profit, stop_loss, etc.)
-
-    Returns:
-        bool: True if updated successfully
     """
     acc = account or context.current_account
     if not acc:
@@ -251,8 +209,6 @@ def reconcile_with_ibkr() -> dict:
     - If IBKR has position but JSON doesn't:
       Just note it (user may have opened manually)
 
-    Returns:
-        dict: Reconciliation result with 'removed' and 'untracked' lists
     """
     result = {
         "removed": [],      # Positions in JSON but not IBKR (closed externally)
@@ -303,8 +259,6 @@ def log_reconciliation_result(result: dict) -> None:
     """
     Log the reconciliation result to terminal and Telegram.
 
-    Args:
-        result: Result dict from reconcile_with_ibkr()
     """
     messages = []
 
@@ -337,8 +291,6 @@ def startup_load_and_reconcile() -> dict:
 
     Call this after IBKR positions are loaded.
 
-    Returns:
-        dict: Reconciliation result
     """
     print("\n📂 Loading position records...")
 

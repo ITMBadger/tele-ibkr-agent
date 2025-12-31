@@ -19,12 +19,6 @@ def generate_report(
     """
     Generate a text report of backtest results.
 
-    Args:
-        result: BacktestResult with all statistics
-        config: Backtest configuration
-
-    Returns:
-        Formatted report string
     """
     stats = result.stats_total
 
@@ -116,14 +110,6 @@ def save_results(
     """
     Save all backtest results to a directory.
 
-    Args:
-        results_dir: Directory to save results
-        config: Backtest configuration
-        result: BacktestResult with trades, equity, and stats
-        signals: Optional list of signals
-
-    Returns:
-        Path to results directory
     """
     results_dir = Path(results_dir)
     results_dir.mkdir(parents=True, exist_ok=True)

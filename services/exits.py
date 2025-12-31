@@ -27,20 +27,6 @@ def check_exit(
     This is the single source of truth for TP/SL exit logic.
     Both live trading and backtesting use this function.
 
-    Args:
-        direction: "LONG" or "SHORT"
-        entry_price: Position entry price
-        tp_price: Take profit price (None to disable)
-        sl_price: Stop loss price (None to disable)
-        bar_high: Current bar high
-        bar_low: Current bar low
-        bar_open: Current bar open (for gap handling)
-
-    Returns:
-        None if no exit, or dict with:
-        - price: Exit price
-        - status: "CLOSED_TP" or "CLOSED_SL"
-        - reason: Human-readable reason
     """
     if direction == "LONG":
         # Check SL first (risk management priority)
@@ -78,14 +64,6 @@ def calculate_tp_sl_prices(
     """
     Calculate TP and SL prices from percentages.
 
-    Args:
-        entry_price: Position entry price
-        direction: "LONG" or "SHORT"
-        tp_pct: Take profit percentage (e.g., 2.0 for 2%)
-        sl_pct: Stop loss percentage (e.g., 1.0 for 1%)
-
-    Returns:
-        Tuple of (tp_price, sl_price)
     """
     if direction == "LONG":
         tp_price = entry_price * (1 + tp_pct / 100)

@@ -47,12 +47,7 @@ class BacktestEngine:
     """
 
     def __init__(self, config: BacktestConfig):
-        """
-        Initialize backtest engine.
-
-        Args:
-            config: Backtest configuration
-        """
+        """Initialize backtest engine."""
         self.config = config
         self._strategy_class: Optional[Type] = None
         self._signals: Dict[str, List[Dict[str, Any]]] = {}
@@ -110,12 +105,7 @@ class BacktestEngine:
             raise ValueError(f"Failed to import strategy {strategy_name}: {e}")
 
     def ensure_data(self) -> Dict[str, Path]:
-        """
-        Ensure historical data exists for all symbols.
-
-        Returns:
-            Dict mapping symbol to data file path
-        """
+        """Ensure historical data exists for all symbols."""
         print("\n[Step 1] Checking historical data...")
 
         data_dir = Path(self.config.ohlc_dir)
@@ -138,12 +128,6 @@ class BacktestEngine:
         Generate signals for all symbols.
 
         Uses parallel chunk processing with optional caching.
-
-        Args:
-            use_cache: Whether to use cached signals if available
-
-        Returns:
-            Dict mapping symbol to list of signals
         """
         print("\n[Step 2] Generating signals...")
 
@@ -272,15 +256,7 @@ class BacktestEngine:
         self,
         signals: Optional[Dict[str, List[Dict[str, Any]]]] = None,
     ) -> BacktestResult:
-        """
-        Run trade simulation with signals.
-
-        Args:
-            signals: Dict of symbol to signals (uses self._signals if None)
-
-        Returns:
-            BacktestResult with all statistics and data
-        """
+        """Run trade simulation with signals."""
         print("\n[Step 3] Running simulation...")
 
         if signals is None:
@@ -355,12 +331,6 @@ class BacktestEngine:
         Save all results to disk including HTML dashboard.
 
         Note: Debug CSVs are saved by workers during signal generation.
-
-        Args:
-            results_dir: Directory to save results (uses self._results_dir if None)
-
-        Returns:
-            Path to results directory
         """
         if results_dir is None:
             results_dir = self._results_dir
@@ -445,12 +415,7 @@ class BacktestEngine:
         return Path(dashboard_path) if dashboard_path else None
 
     def run(self) -> BacktestResult:
-        """
-        Run complete backtest pipeline.
-
-        Returns:
-            BacktestResult with performance metrics
-        """
+        """Run complete backtest pipeline."""
         # Step 0: Create results directory (needed for debug CSV output during signal generation)
         run_id = get_et_now().strftime("%Y%m%d_%H%M%S")
         self._results_dir = Path(self.config.results_dir) / run_id

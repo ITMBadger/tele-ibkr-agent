@@ -53,8 +53,6 @@ class TiingoCache:
         """
         Initialize cache with directory.
 
-        Args:
-            cache_dir: Directory for cache files (created if missing)
         """
         self.cache_dir = Path(cache_dir)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
@@ -69,14 +67,6 @@ class TiingoCache:
         """
         Generate cache file path.
 
-        Args:
-            symbol: Stock symbol (e.g., "QQQ")
-            data_type: Data type (e.g., "daily", "1min", "5min")
-            start_date: Start date as YYYYMMDD string
-            end_date: End date as YYYYMMDD string
-
-        Returns:
-            Path to cache file (may not exist yet)
         """
         return self.cache_dir / f"{symbol}_{data_type}_{start_date}_{end_date}.csv"
 
@@ -88,11 +78,6 @@ class TiingoCache:
         """
         Load data from cache.
 
-        Args:
-            cache_path: Path to cache file
-
-        Returns:
-            DataFrame if file exists, None otherwise
         """
         if not cache_path.exists():
             return None
@@ -115,9 +100,6 @@ class TiingoCache:
         """
         Save data to cache.
 
-        Args:
-            cache_path: Path to cache file
-            df: DataFrame to save
         """
         if df.empty:
             return
@@ -133,8 +115,6 @@ class TiingoCache:
         """
         Delete all cache files.
 
-        Returns:
-            Number of files deleted
         """
         if not self.cache_dir.exists():
             return 0
@@ -173,14 +153,6 @@ class TiingoCache:
 
         Format: {symbol}_{data_type}_IPO_{start}_{end}.csv
 
-        Args:
-            symbol: Stock symbol
-            data_type: Data type (e.g., "1min", "5min")
-            start_date: Actual start date as YYYYMMDD
-            end_date: End date as YYYYMMDD
-
-        Returns:
-            Path to IPO cache file
         """
         return self.cache_dir / f"{symbol}_{data_type}_IPO_{start_date}_{end_date}.csv"
 
@@ -197,13 +169,6 @@ class TiingoCache:
         """
         Detect if data represents an IPO stock (limited history).
 
-        Args:
-            df: Downloaded OHLC data
-            target_start_date: Requested start date
-            tolerance_days: Days beyond which data is considered IPO
-
-        Returns:
-            True if data starts significantly later than requested
         """
         if df.empty:
             return False
@@ -246,14 +211,6 @@ class TiingoCache:
         2. If end_date within tolerance: return file (reuse)
         3. If end_date outside tolerance: DELETE file, return None
 
-        Args:
-            symbol: Stock symbol
-            data_type: Data type (e.g., "1min", "5min")
-            target_end_date: Target end date (usually today)
-            tolerance_days: Max days difference to reuse cache (default 7)
-
-        Returns:
-            Tuple of (cache_path or None, was_deleted: bool)
         """
         pattern = f"{symbol}_{data_type}_*.csv"
         candidates = list(self.cache_dir.glob(pattern))
@@ -310,15 +267,6 @@ class TiingoCache:
         """
         Save data to cache, auto-detecting IPO stocks.
 
-        Args:
-            df: DataFrame to save
-            symbol: Stock symbol
-            data_type: Data type
-            target_start_date: Requested start date
-            target_end_date: Requested end date
-
-        Returns:
-            Path to saved cache file
         """
         is_ipo = self.detect_ipo(df, target_start_date)
 
@@ -364,18 +312,6 @@ class TiingoCache:
            return file for filtering
         3. If end_date is stale (> tolerance_days): delete and return None
 
-        Args:
-            symbol: Stock symbol
-            data_type: Data type (e.g., "1min", "5min")
-            target_start: Requested start date
-            target_end: Requested end date
-            tolerance_days: Max days beyond cached end to still reuse
-
-        Returns:
-            Tuple of (cache_path or None, needs_filtering: bool, was_deleted: bool)
-            - cache_path: Path to valid cache file, or None if not found
-            - needs_filtering: True if cache contains more data than requested
-            - was_deleted: True if stale cache was deleted
         """
         pattern = f"{symbol}_{data_type}_*.csv"
         candidates = list(self.cache_dir.glob(pattern))
@@ -444,13 +380,6 @@ class TiingoCache:
         """
         Load cache and filter to requested date range.
 
-        Args:
-            cache_path: Path to cache file
-            target_start: Filter start date
-            target_end: Filter end date
-
-        Returns:
-            Filtered DataFrame, or None if load fails
         """
         df = self.load(cache_path)
         if df is None or df.empty:
@@ -485,15 +414,6 @@ class TiingoCache:
 
         Use this when extending cache with new data.
 
-        Args:
-            old_path: Current cache file path
-            symbol: Stock symbol
-            data_type: Data type
-            new_start: New start date
-            new_end: New end date
-
-        Returns:
-            New cache file path
         """
         start_str = new_start.strftime("%Y%m%d")
         end_str = new_end.strftime("%Y%m%d")

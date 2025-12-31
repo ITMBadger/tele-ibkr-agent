@@ -112,8 +112,6 @@ async def fetch_ohlc_1hour(symbol: str) -> list[dict]:
     Unified function for both IBKR and Hyperliquid modes.
     Handles symbol translation and crypto/stock detection automatically.
 
-    Returns:
-        List of OHLC bar dicts, or empty list on error
     """
     from datetime import timedelta
     from services.tiingo.api import TiingoAPI
@@ -173,8 +171,6 @@ def get_testing_keyboard() -> dict:
     """
     Returns Telegram InlineKeyboard with test buttons.
 
-    Returns:
-        dict: Telegram reply_markup for inline keyboard
     """
     symbol = get_test_symbol()
     return {
@@ -199,8 +195,6 @@ def handle_test_command() -> tuple[str, dict | None]:
     """
     Handle /test command - show component test keyboard.
 
-    Returns:
-        tuple: (message_text, reply_markup or None)
     """
     if not context.broker_connected.is_set():
         broker = get_broker_name()
@@ -231,11 +225,6 @@ async def handle_callback(callback_data: str) -> str:
     """
     Handle inline keyboard button callbacks (async).
 
-    Args:
-        callback_data: The callback_data from button press
-
-    Returns:
-        str: Response message to show user
     """
     if callback_data == "test_buy":
         return await _schedule_test_buy()
@@ -540,8 +529,6 @@ async def execute_pending_buy() -> str | None:
     - Logs to CSV via SignalLogger
     - Tracks position via pos_manager
 
-    Returns:
-        str: Result message, or None if no pending buy
     """
     global _pending_buy
 

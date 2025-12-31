@@ -69,9 +69,6 @@ class TiingoService:
         """
         Initialize service.
 
-        Args:
-            cache_dir: Cache directory (defaults to data/cache/)
-            api_key: Tiingo API key (defaults to env var)
         """
         cache_dir = Path(cache_dir) if cache_dir else DEFAULT_CACHE_DIR
         self.cache = TiingoCache(cache_dir)
@@ -102,14 +99,6 @@ class TiingoService:
             2. Today: Always fresh, never cached
             3. Merge both results
 
-        Args:
-            symbol: Stock symbol or crypto ticker (e.g., "QQQ" or "BTCUSD")
-            days: Number of days of history
-            interval: Bar interval (e.g., "1min", "5min")
-            use_cache: Whether to use cache for historical data
-
-        Returns:
-            Combined DataFrame
         """
         # Use ET time for date boundaries and cache keys
         et_now = get_et_now()
@@ -201,14 +190,6 @@ class TiingoService:
         Data is filtered to NYSE market hours for stocks only.
         Crypto (24/7 markets) is NOT filtered.
 
-        Args:
-            symbol: Stock symbol (e.g., "QQQ") or crypto ticker (e.g., "BTCUSD")
-            days: Number of days of history (including today)
-            interval: Bar interval ("1min", "5min", "15min", "30min", "1hour")
-            use_cache: Whether to use cache (default True)
-
-        Returns:
-            List of OHLC bars, oldest first
         """
         df = await self._fetch_with_cache(
             symbol=symbol,
@@ -256,14 +237,6 @@ class TiingoService:
         """
         Get just the closing prices.
 
-        Args:
-            symbol: Stock symbol
-            days: Number of days of history
-            interval: Bar interval
-            use_cache: Whether to use cache (default True)
-
-        Returns:
-            List of closing prices, oldest first
         """
         bars = await self.get_ohlc(symbol, days, interval, use_cache)
         return [bar["close"] for bar in bars]
@@ -275,14 +248,6 @@ class TiingoService:
         This method does NOT use cache as it's real-time data.
         Tries IEX real-time endpoint first, falls back to OHLC data.
 
-        Args:
-            symbol: Stock symbol
-
-        Returns:
-            Latest price
-
-        Raises:
-            Exception: If no price data available
         """
         try:
             return await self.api.fetch_current_price(symbol)
