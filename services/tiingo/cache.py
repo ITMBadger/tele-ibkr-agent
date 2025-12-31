@@ -11,8 +11,9 @@ Cache Strategy:
     - IPO format: {symbol}_{data_type}_IPO_{start}_{end}.csv
     - Data types: "daily", "1min", "5min", etc.
 
-Fuzzy Matching:
-    - Cache files within 7-day tolerance are reused
+Smart Range Matching:
+    - If requested range is within cached range, filter from CSV (no API call)
+    - Cache files within DEFAULT_TOLERANCE_DAYS are reused for end date
     - Stale files (outside tolerance) are auto-deleted
 """
 
@@ -21,6 +22,12 @@ from pathlib import Path
 from typing import Optional, Tuple
 
 import pandas as pd
+
+from services.time_centralize_utils import get_start_of_day, get_end_of_day
+
+
+# Default tolerance for cache reuse (days)
+DEFAULT_TOLERANCE_DAYS = 7
 
 
 class TiingoCache:
@@ -335,3 +342,165 @@ class TiingoCache:
 
         self.save(cache_path, df)
         return cache_path
+
+    # =========================================================================
+    # SMART RANGE MATCHING
+    # =========================================================================
+
+    def find_containing_cache(
+        self,
+        symbol: str,
+        data_type: str,
+        target_start: datetime,
+        target_end: datetime,
+        tolerance_days: int = DEFAULT_TOLERANCE_DAYS,
+    ) -> Tuple[Optional[Path], bool, bool]:
+        """
+        Find cache file that contains the requested date range.
+
+        Logic:
+        1. Search for matching files: {symbol}_{data_type}_*.csv
+        2. If file's date range contains requested range (with tolerance for end):
+           return file for filtering
+        3. If end_date is stale (> tolerance_days): delete and return None
+
+        Args:
+            symbol: Stock symbol
+            data_type: Data type (e.g., "1min", "5min")
+            target_start: Requested start date
+            target_end: Requested end date
+            tolerance_days: Max days beyond cached end to still reuse
+
+        Returns:
+            Tuple of (cache_path or None, needs_filtering: bool, was_deleted: bool)
+            - cache_path: Path to valid cache file, or None if not found
+            - needs_filtering: True if cache contains more data than requested
+            - was_deleted: True if stale cache was deleted
+        """
+        pattern = f"{symbol}_{data_type}_*.csv"
+        candidates = list(self.cache_dir.glob(pattern))
+
+        target_start_naive = target_start.replace(tzinfo=None)
+        target_end_naive = target_end.replace(tzinfo=None)
+        deleted_any = False
+
+        for candidate in candidates:
+            try:
+                parts = candidate.stem.split("_")
+
+                # Parse IPO vs regular format
+                if "_IPO_" in candidate.name:
+                    if len(parts) != 5:
+                        continue
+                    _, _, _, cand_start_str, cand_end_str = parts
+                else:
+                    if len(parts) != 4:
+                        continue
+                    _, _, cand_start_str, cand_end_str = parts
+
+                # Parse cache file dates
+                cand_start = datetime.strptime(cand_start_str, "%Y%m%d")
+                cand_end = datetime.strptime(cand_end_str, "%Y%m%d")
+
+                # Check if cache contains the requested start date
+                if cand_start > target_start_naive:
+                    # Cache starts after requested start - can't use
+                    continue
+
+                # Check end date with tolerance
+                end_diff_days = (target_end_naive - cand_end).days
+
+                if end_diff_days <= tolerance_days:
+                    # Cache end is within tolerance of target end
+                    # Check if cache fully contains requested range
+                    if cand_start <= target_start_naive:
+                        needs_filtering = (
+                            cand_start < target_start_naive or
+                            cand_end > target_end_naive
+                        )
+                        print(
+                            f"   [Cache] Found {candidate.name} containing requested range"
+                            + (" (will filter)" if needs_filtering else "")
+                        )
+                        return candidate, needs_filtering, False
+                else:
+                    # Cache is stale - delete it
+                    print(f"   [Cache] Deleting stale {candidate.name} (end date {end_diff_days} days ago)")
+                    candidate.unlink()
+                    deleted_any = True
+
+            except Exception as e:
+                print(f"   [Cache] Error processing {candidate.name}: {e}")
+                continue
+
+        return None, False, deleted_any
+
+    def load_filtered(
+        self,
+        cache_path: Path,
+        target_start: datetime,
+        target_end: datetime,
+    ) -> Optional[pd.DataFrame]:
+        """
+        Load cache and filter to requested date range.
+
+        Args:
+            cache_path: Path to cache file
+            target_start: Filter start date
+            target_end: Filter end date
+
+        Returns:
+            Filtered DataFrame, or None if load fails
+        """
+        df = self.load(cache_path)
+        if df is None or df.empty:
+            return df
+
+        # Ensure date column is datetime
+        if "date" in df.columns:
+            df["date"] = pd.to_datetime(df["date"])
+
+            # Apply date filters using centralized utilities
+            start_dt = get_start_of_day(target_start)
+            end_dt = get_end_of_day(target_end)
+
+            original_len = len(df)
+            df = df[(df["date"] >= start_dt) & (df["date"] <= end_dt)]
+
+            if len(df) < original_len:
+                print(f"   [Cache] Filtered {original_len} → {len(df)} bars")
+
+        return df.reset_index(drop=True)
+
+    def rename_cache(
+        self,
+        old_path: Path,
+        symbol: str,
+        data_type: str,
+        new_start: datetime,
+        new_end: datetime,
+    ) -> Path:
+        """
+        Rename cache file to reflect new date range.
+
+        Use this when extending cache with new data.
+
+        Args:
+            old_path: Current cache file path
+            symbol: Stock symbol
+            data_type: Data type
+            new_start: New start date
+            new_end: New end date
+
+        Returns:
+            New cache file path
+        """
+        start_str = new_start.strftime("%Y%m%d")
+        end_str = new_end.strftime("%Y%m%d")
+        new_path = self.get_path(symbol, data_type, start_str, end_str)
+
+        if old_path.exists() and old_path != new_path:
+            old_path.rename(new_path)
+            print(f"   [Cache] Renamed {old_path.name} → {new_path.name}")
+
+        return new_path

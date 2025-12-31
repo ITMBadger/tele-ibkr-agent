@@ -374,3 +374,92 @@ def get_next_market_open() -> datetime:
         market_open += timedelta(days=1)
 
     return market_open
+
+
+# =============================================================================
+# DATE RANGE UTILITIES
+# =============================================================================
+
+
+def get_et_month() -> str:
+    """
+    Get current month in ET as YYYY-MM string.
+
+    Returns:
+        Month string (e.g., '2024-12')
+    """
+    return get_et_now().strftime("%Y-%m")
+
+
+def get_end_of_day(dt: Union[datetime, pd.Timestamp, str]) -> datetime:
+    """
+    Get end of day (23:59:59.999999) for a given date.
+
+    Use this for inclusive date range filtering where you want to include
+    all intraday bars on the end date.
+
+    Args:
+        dt: Date (string YYYY-MM-DD, datetime, or Timestamp)
+
+    Returns:
+        Naive datetime at 23:59:59.999999 ET
+    """
+    if isinstance(dt, str):
+        parsed = datetime.strptime(dt[:10], "%Y-%m-%d")
+    elif isinstance(dt, pd.Timestamp):
+        parsed = dt.to_pydatetime().replace(tzinfo=None)
+    else:
+        parsed = dt.replace(tzinfo=None) if dt.tzinfo else dt
+
+    return parsed.replace(hour=23, minute=59, second=59, microsecond=999999)
+
+
+def get_start_of_day(dt: Union[datetime, pd.Timestamp, str]) -> datetime:
+    """
+    Get start of day (00:00:00) for a given date.
+
+    Args:
+        dt: Date (string YYYY-MM-DD, datetime, or Timestamp)
+
+    Returns:
+        Naive datetime at 00:00:00 ET
+    """
+    if isinstance(dt, str):
+        parsed = datetime.strptime(dt[:10], "%Y-%m-%d")
+    elif isinstance(dt, pd.Timestamp):
+        parsed = dt.to_pydatetime().replace(tzinfo=None)
+    else:
+        parsed = dt.replace(tzinfo=None) if dt.tzinfo else dt
+
+    return parsed.replace(hour=0, minute=0, second=0, microsecond=0)
+
+
+def get_month_start(year_month: str) -> datetime:
+    """
+    Get first day of month as naive ET datetime at 00:00:00.
+
+    Args:
+        year_month: Month in YYYY-MM format (e.g., "2024-01")
+
+    Returns:
+        Naive datetime for first day of month at midnight ET
+    """
+    return datetime.strptime(year_month, "%Y-%m")
+
+
+def get_month_end(year_month: str) -> datetime:
+    """
+    Get last day of month as naive ET datetime at 23:59:59.999999.
+
+    Args:
+        year_month: Month in YYYY-MM format (e.g., "2024-01")
+
+    Returns:
+        Naive datetime for last day of month at end-of-day ET
+    """
+    dt = datetime.strptime(year_month, "%Y-%m")
+    if dt.month == 12:
+        next_month = dt.replace(year=dt.year + 1, month=1)
+    else:
+        next_month = dt.replace(month=dt.month + 1)
+    return next_month - timedelta(microseconds=1)

@@ -40,7 +40,7 @@ class SimulatedBroker:
     Simulates trade execution for backtesting.
 
     Supports both LONG and SHORT positions with:
-    - Take profit and stop loss (from strategy class)
+    - Take profit and stop loss (configurable or from strategy class)
     - Slippage and commission
     - Bar-by-bar tracking
     - Full equity curve at every bar
@@ -53,6 +53,8 @@ class SimulatedBroker:
         commission_per_trade: float = 1.0,
         position_size_pct: float = 95.0,
         strategy_class: type = None,
+        stop_loss_pct: float = None,
+        take_profit_pct: float = None,
     ):
         """
         Initialize simulated broker.
@@ -63,6 +65,8 @@ class SimulatedBroker:
             commission_per_trade: Commission per trade in dollars
             position_size_pct: Percentage of capital to use per trade
             strategy_class: Strategy class to get TP/SL from class attributes
+            stop_loss_pct: Override stop loss % (None = use strategy default)
+            take_profit_pct: Override take profit % (None = use strategy default)
         """
         self.initial_capital = initial_capital
         self.slippage_pct = slippage_pct
@@ -70,12 +74,19 @@ class SimulatedBroker:
         self.position_size_pct = position_size_pct
         self.strategy_class = strategy_class
 
-        # Get TP/SL from strategy class (defaults if not provided)
-        if strategy_class:
+        # Get TP/SL: config override > strategy class > hardcoded default
+        if take_profit_pct is not None:
+            self.take_profit_pct = take_profit_pct
+        elif strategy_class:
             self.take_profit_pct = getattr(strategy_class, 'TAKE_PROFIT_PCT', 2.0)
-            self.stop_loss_pct = getattr(strategy_class, 'STOP_LOSS_PCT', 1.0)
         else:
             self.take_profit_pct = 2.0
+
+        if stop_loss_pct is not None:
+            self.stop_loss_pct = stop_loss_pct
+        elif strategy_class:
+            self.stop_loss_pct = getattr(strategy_class, 'STOP_LOSS_PCT', 1.0)
+        else:
             self.stop_loss_pct = 1.0
 
         # State

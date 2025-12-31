@@ -3,10 +3,34 @@
 
 from dataclasses import dataclass, field
 from datetime import timedelta
+from enum import Enum
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Union
 
-from services.time_centralize_utils import get_et_now, get_et_date, parse_datetime
+from services.time_centralize_utils import (
+    get_et_now,
+    get_et_date,
+    get_et_month,
+    get_month_start,
+    get_month_end,
+    get_end_of_day,
+    parse_datetime,
+)
+
+
+class DateRangeEnd(str, Enum):
+    """
+    End date options for backtest date range.
+
+    LATEST: Use current system date (today) as end date.
+            Cache will be refreshed when stale (> DEFAULT_TOLERANCE_DAYS).
+    """
+
+    LATEST = "LATEST"
+
+
+# Default tolerance for cache reuse (days)
+DEFAULT_TOLERANCE_DAYS = 7
 
 # Project root directory (parent of backtest/)
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -27,10 +51,13 @@ class BacktestConfig:
     symbols: List[str] = field(default_factory=lambda: ["SPY"])
     strategy: str = "ha_mtf_stoch"
 
-    # Date range - use months_back (relative) instead of absolute dates
-    months_back: int = 24  # 24 months = 2 years of data
+    # Date range - YYYY-MM format
+    # from_date: Start month (e.g., "2023-01")
+    # to_date: End month (e.g., "2024-12") or DateRangeEnd.LATEST for current date
+    from_date: str = "2023-01"
+    to_date: Union[str, DateRangeEnd] = DateRangeEnd.LATEST
 
-    # Computed date range (set in __post_init__)
+    # Computed date range (set in __post_init__, YYYY-MM-DD format)
     start_date: Optional[str] = None
     end_date: Optional[str] = None
 
@@ -42,7 +69,11 @@ class BacktestConfig:
     initial_capital: float = 100_000.0
     slippage_pct: float = 0.001  # 0.1% slippage
     commission_per_trade: float = 1.0  # $ per trade
-    # Note: TP/SL now read from strategy class attributes (STOP_LOSS_PCT, TAKE_PROFIT_PCT)
+
+    # TP/SL override for backtesting (None = use strategy class defaults)
+    # These override the strategy's STOP_LOSS_PCT and TAKE_PROFIT_PCT
+    stop_loss_pct: Optional[float] = None
+    take_profit_pct: Optional[float] = None
 
     # Parallelism
     max_workers: int = 0  # CPU cores (0 or None for auto-calculation)
@@ -65,14 +96,19 @@ class BacktestConfig:
     results_dir: str = field(default_factory=lambda: str(RESULTS_DIR))
 
     def __post_init__(self):
-        """Validate configuration and compute date range."""
-        # Compute date range from months_back if not explicitly set
-        if self.end_date is None:
-            self.end_date = get_et_date()
+        """Validate configuration and compute date range from YYYY-MM format."""
+        # Compute start_date from from_date (YYYY-MM)
         if self.start_date is None:
-            end_dt = parse_datetime(self.end_date)
-            start_dt = end_dt - timedelta(days=self.months_back * 30)
-            self.start_date = start_dt.strftime("%Y-%m-%d")
+            self.start_date = get_month_start(self.from_date).strftime("%Y-%m-%d")
+
+        # Compute end_date from to_date (YYYY-MM or LATEST)
+        if self.end_date is None:
+            if self.to_date == DateRangeEnd.LATEST or self.to_date == "LATEST":
+                # Use current date
+                self.end_date = get_et_date()
+            else:
+                # Use end of specified month
+                self.end_date = get_month_end(self.to_date).strftime("%Y-%m-%d")
 
         # Validate
         if self.chunk_size and self.warmup_size >= self.chunk_size:

@@ -101,7 +101,8 @@ class VectorizedBacktestEngine:
         for symbol in self.config.symbols:
             file_path = ensure_historical_data(
                 symbol=symbol,
-                months_back=self.config.months_back,
+                start_date=self.config.start_date,
+                end_date=self.config.end_date,
                 interval="1min",
                 data_dir=data_dir,
             )
@@ -238,13 +239,16 @@ class VectorizedBacktestEngine:
 
         print(f"  OHLC data: {len(ohlc_df):,} bars")
 
-        # Run simulation with shared SimulatedBroker (TP/SL from strategy class)
+        # Run simulation with shared SimulatedBroker
+        # TP/SL: config override > strategy class default
         strategy_class = self._get_strategy_class()
         broker = SimulatedBroker(
             initial_capital=self.config.initial_capital,
             slippage_pct=self.config.slippage_pct,
             commission_per_trade=self.config.commission_per_trade,
             strategy_class=strategy_class,
+            stop_loss_pct=self.config.stop_loss_pct,
+            take_profit_pct=self.config.take_profit_pct,
         )
 
         sim_results = broker.run_simulation(all_signals, ohlc_df)
@@ -416,7 +420,7 @@ if __name__ == "__main__":
     config = BacktestConfig(
         symbols=["QQQ"],
         strategy="strat_multi_toggle",
-        months_back=12,
+        from_date="2024-01",  # 1 year of data
         initial_capital=100_000.0,
         slippage_pct=0.0002,
         commission_per_trade=0.5,

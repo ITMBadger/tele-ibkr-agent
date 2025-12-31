@@ -14,11 +14,14 @@ import asyncio
 import traceback
 import webbrowser
 from dataclasses import dataclass, field
+from datetime import timedelta
 from pathlib import Path
 from typing import Callable, Optional
 
 from dotenv import load_dotenv
 from nicegui import ui, run
+
+from services.time_centralize_utils import get_et_now
 
 # Load environment variables
 PROJECT_ROOT = Path(__file__).parent
@@ -32,12 +35,21 @@ load_dotenv(PROJECT_ROOT / ".env")
 # Strategy settings
 DEFAULT_STRATEGY = "strat_multi_toggle"
 DEFAULT_SYMBOL = "TQQQ"
-DEFAULT_MONTHS_BACK = 12
+
+# Date range defaults (calculated from current ET time)
+_now = get_et_now()
+_one_year_ago = _now - timedelta(days=365)
+DEFAULT_FROM_DATE = _one_year_ago.strftime("%Y-%m")  # 1 year ago
+DEFAULT_TO_DATE = "LATEST"  # Use current date
 
 # Capital & costs
 DEFAULT_INITIAL_CAPITAL = 100_000.0
 DEFAULT_SLIPPAGE_PCT = 0.0002  # 0.02%
 DEFAULT_COMMISSION_PER_TRADE = 0.5
+
+# TP/SL (None = use strategy defaults from _trading_mech.py)
+DEFAULT_STOP_LOSS_PCT = None  # e.g., 1.0 for 1%
+DEFAULT_TAKE_PROFIT_PCT = None  # e.g., 2.0 for 2%
 
 # Backtest mode
 DEFAULT_MODE = "vectorized"  # "vectorized" or "multiprocessing"
@@ -94,10 +106,15 @@ class AppState:
     # Backtest config
     strategy: str = DEFAULT_STRATEGY
     symbol: str = DEFAULT_SYMBOL
-    months_back: int = DEFAULT_MONTHS_BACK
+    from_date: str = DEFAULT_FROM_DATE  # YYYY-MM format
+    to_date: str = DEFAULT_TO_DATE  # YYYY-MM or "LATEST"
     initial_capital: float = DEFAULT_INITIAL_CAPITAL
     slippage_pct: float = DEFAULT_SLIPPAGE_PCT
     commission_per_trade: float = DEFAULT_COMMISSION_PER_TRADE
+
+    # TP/SL override (None = use strategy defaults)
+    stop_loss_pct: Optional[float] = DEFAULT_STOP_LOSS_PCT
+    take_profit_pct: Optional[float] = DEFAULT_TAKE_PROFIT_PCT
 
     # Run state
     running: bool = False
@@ -154,19 +171,30 @@ def run_backtest(
 
     # Step 1: Create BacktestConfig
     log("Creating config...")
+    # Handle to_date: "LATEST" uses DateRangeEnd enum, otherwise parse as YYYY-MM
+    from backtest import DateRangeEnd
+    to_date_value = DateRangeEnd.LATEST if state.to_date == "LATEST" else state.to_date
+
     config = BacktestConfig(
         symbols=[state.symbol],
         strategy=state.strategy,
-        months_back=state.months_back,
+        from_date=state.from_date,
+        to_date=to_date_value,
         initial_capital=state.initial_capital,
         slippage_pct=state.slippage_pct,
         commission_per_trade=state.commission_per_trade,
+        stop_loss_pct=state.stop_loss_pct,
+        take_profit_pct=state.take_profit_pct,
         save_results=state.save_results,
         hide_signals=state.hide_signals,
     )
     log(f"  Symbol: {state.symbol}")
     log(f"  Period: {config.start_date} to {config.end_date}")
     log(f"  Capital: ${state.initial_capital:,.0f}")
+    if state.stop_loss_pct or state.take_profit_pct:
+        sl_str = f"{state.stop_loss_pct}%" if state.stop_loss_pct else "default"
+        tp_str = f"{state.take_profit_pct}%" if state.take_profit_pct else "default"
+        log(f"  SL: {sl_str}, TP: {tp_str}")
 
     # Step 2: Create engine and load strategy class
     log(f"Starting {state.mode} backtest...")
@@ -305,16 +333,6 @@ def create_config_panel():
                 on_change=lambda e: setattr(state, "symbol", e.value.upper()),
             ).classes("w-full")
 
-            # Months back
-            ui.number(
-                label="Months of Data",
-                value=state.months_back,
-                min=1,
-                max=60,
-                step=1,
-                on_change=lambda e: setattr(state, "months_back", int(e.value)) if e.value is not None and e.value != '' else None,
-            ).classes("w-full")
-
             # Initial capital
             ui.number(
                 label="Initial Capital ($)",
@@ -323,6 +341,22 @@ def create_config_panel():
                 step=10000,
                 format="%.0f",
                 on_change=lambda e: setattr(state, "initial_capital", float(e.value)),
+            ).classes("w-full")
+
+            # From date (YYYY-MM format)
+            ui.input(
+                label="From Date (YYYY-MM)",
+                value=state.from_date,
+                placeholder="2024-01",
+                on_change=lambda e: setattr(state, "from_date", e.value) if e.value else None,
+            ).classes("w-full")
+
+            # To date (YYYY-MM or LATEST)
+            ui.input(
+                label="To Date (YYYY-MM or LATEST)",
+                value=state.to_date,
+                placeholder="LATEST",
+                on_change=lambda e: setattr(state, "to_date", e.value) if e.value else None,
             ).classes("w-full")
 
             # Slippage
@@ -335,6 +369,28 @@ def create_config_panel():
                 format="%.3f",
                 on_change=lambda e: setattr(state, "slippage_pct", float(e.value) / 100),
             ).classes("w-full")
+
+            # Stop Loss % (empty = use strategy default)
+            ui.number(
+                label="Stop Loss % (empty=default)",
+                value=state.stop_loss_pct,
+                min=0.1,
+                max=50,
+                step=0.1,
+                format="%.1f",
+                on_change=lambda e: setattr(state, "stop_loss_pct", float(e.value) if e.value else None),
+            ).classes("w-full").props('clearable')
+
+            # Take Profit % (empty = use strategy default)
+            ui.number(
+                label="Take Profit % (empty=default)",
+                value=state.take_profit_pct,
+                min=0.1,
+                max=100,
+                step=0.1,
+                format="%.1f",
+                on_change=lambda e: setattr(state, "take_profit_pct", float(e.value) if e.value else None),
+            ).classes("w-full").props('clearable')
 
 
 def create_run_section():
